@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ななほし記録帳">
+<title>ななほしの記録帳</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: #fdf6ee;
+    min-height: 100vh;
+    max-width: 420px;
+    margin: 0 auto;
+    color: #3d2b1f;
+  }
+  .header {
+    background: #fff;
+    border-bottom: 2px solid #f0e4d4;
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .header-back {
+    background: none; border: none; font-size: 22px;
+    cursor: pointer; padding: 0 4px; color: #7a5040;
+  }
+  .header-title { font-size: 17px; font-weight: 700; color: #3d2b1f; }
+  .header-sub { font-size: 11px; color: #a08070; margin-top: 1px; }
+  .page { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+  .card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 20px;
+    border: 1px solid #f0e4d4;
+  }
+  .card-title { font-size: 14px; font-weight: 700; color: #3d2b1f; margin-bottom: 12px; }
+  .btn-primary {
+    background: #d4734a; color: #fff; border: none;
+    border-radius: 14px; padding: 18px 0; font-size: 17px;
+    font-weight: 700; cursor: pointer; width: 100%;
+    box-shadow: 0 4px 12px #d4734a44;
+    font-family: inherit; letter-spacing: 0.04em;
+    transition: opacity 0.2s;
+  }
+  .btn-primary:active { opacity: 0.8; }
+  .btn-secondary {
+    background: #fff; color: #7a5040;
+    border: 2px solid #e0cfc0; border-radius: 14px;
+    padding: 14px 0; font-size: 15px; font-weight: 600;
+    cursor: pointer; width: 100%; font-family: inherit;
+    transition: opacity 0.2s;
+  }
+  .btn-secondary:active { opacity: 0.7; }
+  .btn-danger {
+    background: none; border: 1.5px solid #e8c0b0;
+    border-radius: 10px; padding: 12px 0; font-size: 13px;
+    color: #b05040; cursor: pointer; width: 100%; font-family: inherit;
+  }
+  /* Energy slider */
+  .energy-display { text-align: center; font-size: 34px; margin-bottom: 12px; }
+  input[type=range] { width: 100%; }
+  .range-labels { display: flex; justify-content: space-between; font-size: 10px; color: #9a8070; margin-top: 4px; }
+  /* Check items */
+  .check-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 11px 14px; border-radius: 10px; border: 2px solid #e8ddd4;
+    background: #faf6f2; cursor: pointer; font-size: 14px;
+    color: #6a5040; margin-bottom: 8px; font-family: inherit;
+    width: 100%; text-align: left; transition: all 0.15s;
+  }
+  .check-item.checked { background: #fde8dc; border-color: #d4734a; color: #8b3a20; font-weight: 700; }
+  /* Memo */
+  textarea {
+    width: 100%; border: 1.5px solid #e8ddd4; border-radius: 10px;
+    padding: 10px 12px; font-size: 14px; color: #3d2b1f;
+    background: #fdf6ee; resize: none; font-family: inherit;
+    outline: none; line-height: 1.6;
+  }
+  /* Banner */
+  .banner { border-radius: 16px; padding: 18px 20px; }
+  /* History list */
+  .history-item {
+    background: #fff; border: 1.5px solid #f0e4d4; border-radius: 14px;
+    padding: 14px 16px; display: flex; align-items: center; gap: 14px;
+    cursor: pointer; width: 100%; text-align: left; font-family: inherit;
+    margin-bottom: 10px; transition: opacity 0.2s;
+  }
+  .history-item:active { opacity: 0.7; }
+  .history-icon {
+    width: 44px; height: 44px; border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; flex-shrink: 0;
+  }
+  /* Bar chart */
+  .bars { display: flex; gap: 6px; align-items: flex-end; }
+  .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .bar { width: 100%; border-radius: 4px; min-height: 10px; transition: height 0.3s; }
+  .bar-label { font-size: 9px; color: #9a8070; }
+  /* Detail */
+  .detail-banner { border-radius: 16px; padding: 20px; text-align: center; }
+  .check-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; }
+  /* Saved */
+  .btn-primary.saved { background: #48bb78; box-shadow: 0 4px 12px #48bb7844; }
+  /* Safe area */
+  .page { padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+</style>
+</head>
+<body>
+
+<div id="app"></div>
+
+<script>
+const ENERGY_LABELS = ["💀 もう限界", "😩 しんどい", "😐 まあまあ", "😊 元気", "✨ 最高！"];
+const ENERGY_COLORS = ["#e53e3e", "#e07b39", "#d4a017", "#48bb78", "#38b2ac"];
+const LOAD_ITEMS = [
+  { id: "sleep", label: "睡眠が取れた" },
+  { id: "meal", label: "ちゃんと食べた" },
+  { id: "alone", label: "一人の時間があった" },
+  { id: "child", label: "子どものことで消耗した" },
+  { id: "work", label: "仕事がきつかった" },
+  { id: "task", label: "やること多すぎた" },
+];
+const STORAGE_KEY = "nanahoshi_diary_v1";
+
+let state = {
+  view: "home", // home | write | history | detail
+  entries: [],
+  selected: null,
+  energy: 2,
+  loads: {},
+  memo: "",
+  saved: false,
+};
+
+function loadEntries() {
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || []; } catch { return []; }
+}
+function saveEntries(entries) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(entries)); } catch {}
+}
+
+function formatDate(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return d.toLocaleDateString("ja-JP", { month: "long", day: "numeric", weekday: "short" });
+}
+function daysSince(dateStr) {
+  const d = new Date(dateStr + "T00:00:00");
+  return Math.floor((Date.now() - d.getTime()) / 86400000);
+}
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+function setState(patch) {
+  Object.assign(state, patch);
+  render();
+}
+
+function saveEntry() {
+  const entry = {
+    id: Date.now(),
+    date: todayStr(),
+    energy: state.energy,
+    loads: { ...state.loads },
+    memo: state.memo,
+  };
+  const updated = [entry, ...state.entries];
+  saveEntries(updated);
+  setState({ saved: true, entries: updated });
+  setTimeout(() => {
+    setState({ view: "home", energy: 2, loads: {}, memo: "", saved: false });
+  }, 1200);
+}
+
+function deleteEntry(id) {
+  const updated = state.entries.filter(e => e.id !== id);
+  saveEntries(updated);
+  setState({ entries: updated, view: "history" });
+}
+
+function render() {
+  const app = document.getElementById("app");
+  const { view, entries, selected, energy, loads, memo, saved } = state;
+  const lastEntry = entries[0];
+
+  let headerTitle = "ななほしの記録帳";
+  let showBack = false;
+  let backView = "home";
+  if (view === "write") { headerTitle = "今日の記録"; showBack = true; }
+  if (view === "history") { headerTitle = "これまでの記録"; showBack = true; }
+  if (view === "detail") { headerTitle = "詳細"; showBack = true; backView = "history"; }
+
+  let content = "";
+
+  // ---- HOME ----
+  if (view === "home") {
+    let bannerContent = "";
+    if (lastEntry) {
+      const days = daysSince(lastEntry.date);
+      const warn = days >= 7 ? `<div style="margin-top:8px;font-size:12px;color:#e53e3e;font-weight:700;">⚠️ ${days}日ぶり！そろそろ書こう</div>`
+        : days > 0 ? `<div style="margin-top:8px;font-size:12px;color:#7a6050;">${days}日前に記録したよ</div>` : `<div style="margin-top:8px;font-size:12px;color:#48bb78;">今日も記録済み✅</div>`;
+      bannerContent = `
+        <div style="font-size:13px;color:#7a6050;margin-bottom:4px;">最後の記録</div>
+        <div style="font-size:28px;margin-bottom:4px;">${ENERGY_LABELS[lastEntry.energy]}</div>
+        <div style="font-size:13px;color:#5a4030;">${formatDate(lastEntry.date)}</div>
+        ${warn}
+      `;
+    } else {
+      bannerContent = `<div style="font-size:14px;color:#9a8070;">まだ記録がないよ。最初の1件を書いてみよう！</div>`;
+    }
+
+    const bannerBg = lastEntry ? ENERGY_COLORS[lastEntry.energy] + "22" : "#f0e4d4";
+    const bannerBorder = lastEntry ? ENERGY_COLORS[lastEntry.energy] : "#e0cfc0";
+
+    let chartHtml = "";
+    if (entries.length >= 2) {
+      const recent = entries.slice(0, 7).reverse();
+      const bars = recent.map(e => {
+        const h = (e.energy + 1) * 10;
+        const dateObj = new Date(e.date + "T00:00:00");
+        const label = `${dateObj.getMonth()+1}/${dateObj.getDate()}`;
+        return `<div class="bar-wrap"><div class="bar" style="height:${h}px;background:${ENERGY_COLORS[e.energy]};"></div><div class="bar-label">${label}</div></div>`;
+      }).join("");
+      chartHtml = `
+        <div class="card">
+          <div class="card-title">最近のエネルギー推移</div>
+          <div class="bars">${bars}</div>
+        </div>
+      `;
+    }
+
+    const histBtn = entries.length > 0
+      ? `<button class="btn-secondary" onclick="setState({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>`
+      : "";
+
+    content = `
+      <div class="banner" style="background:${bannerBg};border:2px solid ${bannerBorder};">${bannerContent}</div>
+      <button class="btn-primary" onclick="setState({view:'write'})">✏️ 今日を記録する</button>
+      ${histBtn}
+      ${chartHtml}
+    `;
+  }
+
+  // ---- WRITE ----
+  if (view === "write") {
+    const color = ENERGY_COLORS[energy];
+    const checkItems = LOAD_ITEMS.map(item => {
+      const checked = loads[item.id] ? "checked" : "";
+      const icon = loads[item.id] ? "✅" : "⬜";
+      return `<button class="check-item ${checked}" onclick="toggleLoad('${item.id}')">${icon} ${item.label}</button>`;
+    }).join("");
+
+    const btnClass = saved ? "btn-primary saved" : "btn-primary";
+    const btnLabel = saved ? "✅ 記録したよ！" : "この記録を保存する";
+
+    content = `
+      <div class="card">
+        <div class="card-title">今のエネルギーは？</div>
+        <div class="energy-display" id="energyDisplay">${ENERGY_LABELS[energy]}</div>
+        <input type="range" min="0" max="4" value="${energy}"
+          oninput="updateEnergy(this.value)"
+          style="accent-color:${color};">
+        <div class="range-labels"><span>限界</span><span>最高！</span></div>
+      </div>
+      <div class="card">
+        <div class="card-title">今日どうだった？（複数OK）</div>
+        ${checkItems}
+      </div>
+      <div class="card">
+        <div class="card-title">ひとこと日記（なくてもOK）</div>
+        <textarea rows="4" placeholder="今日感じたこと、気になったこと…なんでも"
+          oninput="state.memo=this.value">${memo}</textarea>
+      </div>
+      <button class="${btnClass}" onclick="saveEntry()" ${saved ? "disabled" : ""}>${btnLabel}</button>
+    `;
+  }
+
+  // ---- HISTORY ----
+  if (view === "history") {
+    if (entries.length === 0) {
+      content = `<div style="text-align:center;color:#9a8070;padding:40px;">まだ記録がないよ</div>`;
+    } else {
+      content = entries.map(e => {
+        const icon = ENERGY_LABELS[e.energy].split(" ")[0];
+        const label = ENERGY_LABELS[e.energy].replace(/.*? /, "");
+        const memoSnip = e.memo ? ` · ${e.memo.slice(0, 20)}…` : "";
+        return `
+          <button class="history-item" onclick="openDetail(${e.id})">
+            <div class="history-icon" style="background:${ENERGY_COLORS[e.energy]}33;">${icon}</div>
+            <div style="flex:1;">
+              <div style="font-size:14px;font-weight:600;">${formatDate(e.date)}</div>
+              <div style="font-size:12px;color:#9a8070;margin-top:2px;">${label}${memoSnip}</div>
+            </div>
+            <span style="color:#c0a090;font-size:18px;">›</span>
+          </button>
+        `;
+      }).join("");
+    }
+  }
+
+  // ---- DETAIL ----
+  if (view === "detail" && selected) {
+    const color = ENERGY_COLORS[selected.energy];
+    const checks = LOAD_ITEMS.map(item => {
+      const on = selected.loads?.[item.id];
+      return `<div class="check-row" style="opacity:${on?1:0.45};">
+        <span>${on?"✅":"⬜"}</span>
+        <span>${item.label}</span>
+      </div>`;
+    }).join("");
+    const memoHtml = selected.memo
+      ? `<div class="card"><div class="card-title">ひとこと</div><div style="font-size:14px;line-height:1.7;white-space:pre-wrap;">${selected.memo}</div></div>`
+      : "";
+    content = `
+      <div class="detail-banner" style="background:${color}22;border:2px solid ${color};">
+        <div style="font-size:13px;color:#7a6050;">${formatDate(selected.date)}</div>
+        <div style="font-size:36px;margin-top:8px;">${ENERGY_LABELS[selected.energy]}</div>
+      </div>
+      <div class="card"><div class="card-title">その日のチェック</div>${checks}</div>
+      ${memoHtml}
+      <button class="btn-danger" onclick="deleteEntry(${selected.id})">この記録を削除する</button>
+    `;
+  }
+
+  const backBtn = showBack
+    ? `<button class="header-back" onclick="setState({view:'${backView}'})">←</button>`
+    : "";
+
+  app.innerHTML = `
+    <div class="header">
+      ${backBtn}
+      <div>
+        <div class="header-title">${headerTitle}</div>
+        <div class="header-sub">週1チェック & エネルギー日記</div>
+      </div>
+    </div>
+    <div class="page">${content}</div>
+  `;
+}
+
+function toggleLoad(id) {
+  state.loads = { ...state.loads, [id]: !state.loads[id] };
+  render();
+}
+function updateEnergy(val) {
+  state.energy = Number(val);
+  const el = document.getElementById("energyDisplay");
+  if (el) el.textContent = ENERGY_LABELS[state.energy];
+  const input = document.querySelector("input[type=range]");
+  if (input) input.style.accentColor = ENERGY_COLORS[state.energy];
+}
+function openDetail(id) {
+  const entry = state.entries.find(e => e.id === id);
+  if (entry) setState({ selected: entry, view: "detail" });
+}
+
+// init
+state.entries = loadEntries();
+render();
+</script>
+</body>
+</html>
