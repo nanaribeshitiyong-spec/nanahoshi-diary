@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="ななほし記録帳">
+<title>ななほしの記録帳</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body {
+    font-family: 'Hiragino Kaku Gothic ProN', 'Noto Sans JP', sans-serif;
+    background: #fdf6ee; min-height: 100vh;
+    max-width: 430px; margin: 0 auto; color: #3d2b1f;
+  }
+  .header {
+    background: #fff; border-bottom: 2px solid #eeddd0;
+    padding: 13px 16px; display: flex; align-items: center; gap: 10px;
+    position: sticky; top: 0; z-index: 20;
+  }
+  .back-btn {
+    background: none; border: none; font-size: 20px;
+    cursor: pointer; color: #c8623c; padding: 2px 4px;
+  }
+  .header-title { font-size: 15px; font-weight: 700; color: #3d2b1f; }
+  .header-sub { font-size: 10px; color: #a08878; margin-top: 1px; }
+  .page { padding: 16px 16px 40px; display: flex; flex-direction: column; gap: 12px; }
+  .card { background: #fff; border-radius: 16px; padding: 16px; border: 1px solid #eeddd0; }
+  .card-title { font-size: 13px; font-weight: 700; margin-bottom: 10px; }
+  .btn-primary {
+    width: 100%; padding: 15px 0; background: #c8623c; color: #fff;
+    border: none; border-radius: 14px; font-size: 15px; font-weight: 700;
+    cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px #c8623c38;
+  }
+  .btn-primary.saved { background: #3aaeaa; }
+  .btn-secondary {
+    width: 100%; padding: 12px 0; background: #fff; color: #7a5040;
+    border: 2px solid #eeddd0; border-radius: 14px; font-size: 13px;
+    font-weight: 600; cursor: pointer; font-family: inherit;
+  }
+  .energy-btn {
+    flex: 1; padding: 9px 2px; background: #faf6f2;
+    border: 2px solid #eeddd0; border-radius: 10px; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; gap: 3px;
+    font-family: inherit;
+  }
+  .energy-btn.active { background: var(--ec); border-color: var(--eb); }
+  .energy-emoji { font-size: 20px; }
+  .energy-label { font-size: 8px; color: #a08878; }
+  .energy-label.active { font-weight: 700; }
+  .energy-selected {
+    margin-top: 10px; padding: 9px 12px; border-radius: 8px;
+    font-size: 13px; font-weight: 700; text-align: center;
+  }
+  .check-btn {
+    display: flex; align-items: center; gap: 9px;
+    padding: 10px 12px; background: #faf6f2;
+    border: 2px solid #eeddd0; border-radius: 9px;
+    cursor: pointer; text-align: left; font-size: 13px;
+    color: #6a5040; font-family: inherit; width: 100%;
+  }
+  .check-btn.on { background: #fde8dc; border-color: #c8623c; color: #7a2e10; font-weight: 700; }
+  textarea {
+    width: 100%; border: 1.5px solid #eeddd0; border-radius: 8px;
+    padding: 9px 11px; font-size: 13px; color: #3d2b1f;
+    background: #fdf6ee; resize: none; font-family: inherit;
+    outline: none; line-height: 1.65; box-sizing: border-box;
+  }
+  .history-btn {
+    display: flex; align-items: center; gap: 12px;
+    background: #fff; border: 1.5px solid #eeddd0; border-radius: 14px;
+    padding: 12px 14px; cursor: pointer; text-align: left;
+    font-family: inherit; width: 100%;
+  }
+  .history-icon {
+    width: 42px; height: 42px; border-radius: 11px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center; font-size: 21px;
+  }
+  .bars { display: flex; gap: 5px; align-items: flex-end; height: 52px; }
+  .bar-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+  .bar { width: 100%; border-radius: 3px; min-height: 7px; }
+  .bar-lbl { font-size: 8px; color: #a08878; }
+  .delete-confirm {
+    background: #fff5f5; border: 1.5px solid #e8b0a0;
+    border-radius: 12px; padding: 16px;
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .confirm-btns { display: flex; gap: 8px; }
+  .btn-cancel {
+    flex: 1; padding: 11px 0; background: #fff; color: #a08878;
+    border: 1.5px solid #eeddd0; border-radius: 9px;
+    font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+  .btn-delete {
+    flex: 1; padding: 11px 0; background: #b04030; color: #fff;
+    border: none; border-radius: 9px; font-size: 13px;
+    font-weight: 700; cursor: pointer; font-family: inherit;
+  }
+  .btn-danger {
+    width: 100%; padding: 12px 0; background: none;
+    color: #b04030; border: 1.5px solid #e8b0a0;
+    border-radius: 10px; font-size: 13px; cursor: pointer; font-family: inherit;
+  }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<script>
+const STORAGE_KEY = "nanahoshi_diary_v2";
+const ENERGY = [
+  { emoji:"💀", label:"もう限界", color:"#e05252" },
+  { emoji:"😩", label:"しんどい",  color:"#e0894a" },
+  { emoji:"😐", label:"まあまあ",  color:"#d4b44a" },
+  { emoji:"😊", label:"元気",      color:"#5bbf7a" },
+  { emoji:"✨", label:"最高！",    color:"#3aaeaa" },
+];
+const CHECKS = [
+  { id:"sleep", label:"睡眠が取れた" },
+  { id:"meal",  label:"ちゃんと食べた" },
+  { id:"alone", label:"一人の時間があった" },
+  { id:"child", label:"子どものことで消耗した" },
+  { id:"work",  label:"仕事がきつかった" },
+  { id:"task",  label:"やること多すぎた" },
+];
+
+function todayJST() {
+  return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+}
+function fmtDate(s) {
+  return new Date(s+"T00:00:00+09:00").toLocaleDateString("ja-JP",{month:"long",day:"numeric",weekday:"short"});
+}
+function daysSince(s) {
+  const base = new Date(s+"T00:00:00+09:00").getTime();
+  const now  = new Date(todayJST()+"T00:00:00+09:00").getTime();
+  return Math.round((now-base)/86400000);
+}
+function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||[]; } catch { return []; } }
+function save(e) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(e)); } catch {} }
+
+let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false };
+
+function set(patch) { Object.assign(S,patch); render(); }
+
+function render() {
+  const { view, entries, selected, energy, checks, memo, saved, confirming } = S;
+  const last = entries[0] ?? null;
+  const eopt = e => ENERGY[e.energy];
+  let html = "";
+
+  // HEADER
+  const back = (v) => `<button class="back-btn" onclick="set({view:'${v}'})">←</button>`;
+  const header = (title, backTo) => `
+    <div class="header">
+      ${backTo ? back(backTo) : ""}
+      <div>
+        <div class="header-title">${title}</div>
+        <div class="header-sub">週1チェック & エネルギー日記</div>
+      </div>
+    </div>`;
+
+  if (view === "home") {
+    let banner = "";
+    if (last) {
+      const o = eopt(last); const d = daysSince(last.date);
+      const note = d===0 ? `<div style="font-size:11px;color:#3aaeaa;font-weight:700;">今日も記録済み ✅</div>`
+        : d===1 ? `<div style="font-size:11px;color:#a08878;">昨日記録したよ</div>`
+        : d<7   ? `<div style="font-size:11px;color:#a08878;">${d}日前に記録したよ</div>`
+        : `<div style="font-size:12px;color:#e05252;font-weight:700;">⚠️ ${d}日ぶり！そろそろ書こう</div>`;
+      banner = `<div style="background:${o.color}18;border:2px solid ${o.color};border-radius:18px;padding:16px 18px;">
+        <div style="font-size:11px;color:#a08878;margin-bottom:6px;">最後の記録</div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:5px;">
+          <span style="font-size:30px;">${o.emoji}</span>
+          <div><div style="font-size:15px;font-weight:700;">${o.label}</div>
+          <div style="font-size:11px;color:#a08878;">${fmtDate(last.date)}</div></div>
+        </div>${note}</div>`;
+    } else {
+      banner = `<div style="background:#f5ece4;border:2px solid #eeddd0;border-radius:18px;padding:16px 18px;">
+        <div style="font-size:11px;color:#a08878;margin-bottom:6px;">最後の記録</div>
+        <div style="font-size:13px;color:#a08878;">まだ記録がないよ。最初の1件を書いてみよう！</div></div>`;
+    }
+    let chart = "";
+    if (entries.length >= 2) {
+      const recent = [...entries].slice(0,7).reverse();
+      const bars = recent.map(e => {
+        const o = eopt(e); const h=(e.energy+1)*9;
+        const d=new Date(e.date+"T00:00:00+09:00");
+        return `<div class="bar-wrap"><div class="bar" style="height:${h}px;background:${o.color};"></div><div class="bar-lbl">${d.getMonth()+1}/${d.getDate()}</div></div>`;
+      }).join("");
+      chart = `<div class="card"><div class="card-title" style="color:#a08878;">最近のエネルギー</div><div class="bars">${bars}</div></div>`;
+    }
+    const histBtn = entries.length > 0
+      ? `<button class="btn-secondary" onclick="set({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>` : "";
+    html = header("ななほしの記録帳") +
+      `<div class="page">${banner}
+        <button class="btn-primary" onclick="set({view:'write'})">✏️ 今日を記録する</button>
+        ${histBtn}${chart}</div>`;
+  }
+
+  if (view === "write") {
+    const today = todayJST();
+    const existing = entries.find(e=>e.date===today);
+    const o = ENERGY[energy];
+    const energyBtns = ENERGY.map((e,i) => {
+      const active = i===energy;
+      return `<button class="energy-btn${active?" active":""}" style="--ec:${e.color}18;--eb:${e.color}" onclick="set({energy:${i}})">
+        <span class="energy-emoji">${e.emoji}</span>
+        <span class="energy-label${active?" active":""}" style="${active?`color:${e.color}`:""}">${e.label}</span>
+      </button>`;
+    }).join("");
+    const checkBtns = CHECKS.map(c => {
+      const on = !!checks[c.id];
+      return `<button class="check-btn${on?" on":""}" onclick="toggleCheck('${c.id}')">
+        <span style="font-size:15px;">${on?"✅":"⬜"}</span>${c.label}</button>`;
+    }).join("<div style='height:7px'></div>");
+    const btnLabel = saved ? "✅ 記録したよ！" : existing ? "更新する" : "この記録を保存する";
+    html = header(existing?"今日の記録を更新":"今日の記録","home") +
+      `<div class="page">
+        <div class="card">
+          <div class="card-title">今のエネルギーは？</div>
+          <div style="display:flex;gap:6px;">${energyBtns}</div>
+          <div class="energy-selected" style="background:${o.color}18;color:${o.color};">${o.emoji} ${o.label}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">今日どうだった？（複数OK）</div>
+          ${checkBtns}
+        </div>
+        <div class="card">
+          <div class="card-title">ひとこと日記（なくてもOK）</div>
+          <textarea rows="3" placeholder="今日感じたこと、気になったこと…なんでも"
+            oninput="S.memo=this.value">${memo}</textarea>
+        </div>
+        <button class="btn-primary${saved?" saved":""}" onclick="saveEntry()" ${saved?"disabled":""}>${btnLabel}</button>
+      </div>`;
+  }
+
+  if (view === "history") {
+    const items = entries.length === 0
+      ? `<div style="text-align:center;color:#a08878;padding:40px;">記録がまだないよ</div>`
+      : entries.map(e => {
+          const o = eopt(e);
+          const preview = e.memo ? e.memo.replace(/\s+/g," ").trim().slice(0,22)+(e.memo.length>22?"…":"") : null;
+          return `<button class="history-btn" onclick="openDetail(${e.id})">
+            <div class="history-icon" style="background:${o.color}28;">${o.emoji}</div>
+            <div style="flex:1;min-width:0;">
+              <div style="font-size:13px;font-weight:600;">${fmtDate(e.date)}</div>
+              <div style="font-size:11px;color:#a08878;margin-top:2px;">${o.label}${preview?` · ${preview}`:""}</div>
+            </div>
+            <span style="color:#c0a090;font-size:17px;">›</span>
+          </button>`;
+        }).join("<div style='height:9px'></div>");
+    html = header("これまでの記録","home") + `<div class="page">${items}</div>`;
+  }
+
+  if (view === "detail" && selected) {
+    const o = ENERGY[selected.energy];
+    const checkRows = CHECKS.map(c => {
+      const on = !!selected.checks?.[c.id];
+      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;opacity:${on?1:0.38};">
+        <span>${on?"✅":"⬜"}</span><span>${c.label}</span></div>`;
+    }).join("");
+    const memoHtml = selected.memo
+      ? `<div class="card"><div class="card-title" style="color:#a08878;">ひとこと</div>
+         <div style="font-size:13px;line-height:1.75;white-space:pre-wrap;">${selected.memo}</div></div>` : "";
+    const deleteUI = confirming
+      ? `<div class="delete-confirm">
+          <div style="font-size:13px;font-weight:700;color:#b04030;text-align:center;">
+            本当に削除しますか？<br>
+            <span style="font-size:11px;font-weight:400;color:#a08878;">元には戻せません</span>
+          </div>
+          <div class="confirm-btns">
+            <button class="btn-cancel" onclick="set({confirming:false})">やっぱりやめる</button>
+            <button class="btn-delete" onclick="deleteEntry(${selected.id})">削除する</button>
+          </div>
+        </div>`
+      : `<button class="btn-danger" onclick="set({confirming:true})">この記録を削除する</button>`;
+    html = header("記録の詳細","history") +
+      `<div class="page">
+        <div style="background:${o.color}1a;border:2px solid ${o.color};border-radius:18px;padding:20px 16px;text-align:center;">
+          <div style="font-size:11px;color:#a08878;margin-bottom:5px;">${fmtDate(selected.date)}</div>
+          <div style="font-size:38px;margin-bottom:3px;">${o.emoji}</div>
+          <div style="font-size:17px;font-weight:700;color:${o.color};">${o.label}</div>
+        </div>
+        <div class="card"><div class="card-title" style="color:#a08878;">その日のチェック</div>${checkRows}</div>
+        ${memoHtml}
+        ${deleteUI}
+      </div>`;
+  }
+
+  document.getElementById("app").innerHTML = html;
+}
+
+function toggleCheck(id) {
+  S.checks = { ...S.checks, [id]: !S.checks[id] };
+  render();
+}
+
+function saveEntry() {
+  const today = todayJST();
+  const existing = S.entries.find(e=>e.date===today);
+  const entry = { id: existing?.id ?? Date.now(), date: today, energy: S.energy, checks: {...S.checks}, memo: S.memo };
+  const filtered = S.entries.filter(e=>e.date!==today);
+  const next = [entry,...filtered].sort((a,b)=>b.date.localeCompare(a.date));
+  save(next);
+  set({ saved:true, entries:next });
+  setTimeout(()=>set({ view:"home", energy:2, checks:{}, memo:"", saved:false }), 900);
+}
+
+function deleteEntry(id) {
+  const next = S.entries.filter(e=>e.id!==id);
+  save(next);
+  set({ entries:next, view:"history", confirming:false, selected:null });
+}
+
+function openDetail(id) {
+  const entry = S.entries.find(e=>e.id===id);
+  if (entry) set({ selected:entry, view:"detail", confirming:false });
+}
+
+render();
+</script>
+</body>
+</html>
