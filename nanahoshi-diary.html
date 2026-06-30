@@ -271,6 +271,30 @@
     border: 2px solid #c9bdf0; border-radius: 14px; font-size: 14px; font-weight: 700;
     cursor: pointer; font-family: inherit;
   }
+  .ai-intro-card {
+    background: linear-gradient(160deg,#fdf6ee,#f3f0ff);
+    border: 1.5px solid #e3e0f5; border-radius: 20px;
+    padding: 20px 18px; text-align: center;
+  }
+  .ai-intro-emoji { font-size: 30px; margin-bottom: 8px; }
+  .ai-intro-title { font-size: 15px; font-weight: 700; color: #5a4f9c; margin-bottom: 6px; }
+  .ai-intro-text { font-size: 12px; color: #8a8098; line-height: 1.8; }
+  .ai-finding-card {
+    background: #fff; border: 1.5px solid #eeddd0; border-radius: 18px;
+    padding: 17px 18px; position: relative;
+  }
+  .ai-finding-num { font-size: 11px; color: #c9bdf0; font-weight: 700; margin-bottom: 6px; }
+  .ai-finding-body { font-size: 13px; line-height: 1.9; color: #4a3f30; }
+  .ai-finding-insight {
+    margin-top: 10px; padding-top: 10px; border-top: 1px dashed #eeddd0;
+    font-size: 12px; line-height: 1.8; color: #8a7560; font-style: italic;
+  }
+  .ai-empty-card {
+    text-align: center; color: #a08878; padding: 50px 24px; font-size: 13px; line-height: 1.9;
+  }
+  .ai-footer-note {
+    font-size: 11px; color: #b0a698; text-align: center; line-height: 1.8; padding: 6px 8px 0;
+  }
 </style>
 </head>
 <body>
@@ -385,6 +409,298 @@ function gardenStats(entries) {
   if (goodCount >= 8) decor.push("🌈");
 
   return { totalDays, avgEnergy, goodCount, toughCount, stage, nextStage, progress, mood, decor };
+}
+
+// ===== AI分析（未来の自分への手紙） =====
+// 食事メモのテキストから簡易的に特徴語を判定するキーワード辞書
+const FOOD_KEYWORDS = {
+  junk: ["カップ麺","カップラーメン","ジャンク","ファスト","ポテチ","菓子パン","コンビニ","ハンバーガー","唐揚げ","揚げ物","菓子","スナック","チョコ","アイス","ラーメン"],
+  healthy: ["納豆","味噌汁","みそ汁","野菜","サラダ","豆腐","和食","魚","煮物","スープ","発酵","ヨーグルト"],
+  bread: ["パン","トースト","食パン"],
+  warm: ["温かい","あたたかい","鍋","スープ","味噌汁","みそ汁","おでん","煮込み"],
+  convenience: ["コンビニ","お惣菜","惣菜","レトルト","冷凍食品","出前","外食"],
+  sweet: ["甘い","スイーツ","チョコ","ケーキ","アイス","お菓子","チョコレート"],
+  simple: ["簡単","レンチン","レンジ","カップ","菓子パン","おにぎりだけ","パンだけ"],
+};
+function textHasAny(text, words) {
+  if (!text) return false;
+  return words.some(w => text.includes(w));
+}
+function dayFoodFlags(mealsOfDay) {
+  if (!mealsOfDay) return {};
+  const all = Object.values(mealsOfDay).join(" ");
+  const ateBreakfast = !!(mealsOfDay.breakfast && mealsOfDay.breakfast.trim());
+  const hadSnack = !!(mealsOfDay.snack && mealsOfDay.snack.trim());
+  return {
+    all,
+    ateBreakfast,
+    hadSnack,
+    isJunk: textHasAny(all, FOOD_KEYWORDS.junk),
+    isHealthy: textHasAny(all, FOOD_KEYWORDS.healthy),
+    isBreadOnly: textHasAny(mealsOfDay.breakfast||"", FOOD_KEYWORDS.bread) && Object.keys(mealsOfDay).filter(k=>mealsOfDay[k]&&mealsOfDay[k].trim()).length<=1,
+    isWarm: textHasAny(all, FOOD_KEYWORDS.warm),
+    isConvenience: textHasAny(all, FOOD_KEYWORDS.convenience),
+    isSweet: textHasAny(all, FOOD_KEYWORDS.sweet),
+    isSimple: textHasAny(all, FOOD_KEYWORDS.simple),
+  };
+}
+
+function buildAiAnalysis(entries, meals) {
+  // 日付ごとに記録とチェックと食事を結合
+  const byDate = {};
+  entries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{} }; });
+  const dates = Object.keys(byDate).sort(); // 古い→新しい
+  const minDaysNeeded = 3;
+  if (dates.length < minDaysNeeded) return { ready:false, have:dates.length, need:minDaysNeeded };
+
+  const findings = []; // { body, insight }
+
+  // ---- パターン1: 睡眠不足の日は間食が増える ----
+  {
+    let sleepLackSnack=0, sleepLackTotal=0, normalSnack=0, normalTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      const flags = dayFoodFlags(meals[d]);
+      const isSleepLack = !!day.checks.sleep_lack || !!day.checks.sleep_nap || !!day.checks.sleep_rhythm;
+      if (isSleepLack) { sleepLackTotal++; if (flags.hadSnack) sleepLackSnack++; }
+      else { normalTotal++; if (flags.hadSnack) normalSnack++; }
+    });
+    if (sleepLackTotal>=2 && sleepLackSnack/sleepLackTotal >= 0.5 && sleepLackSnack/sleepLackTotal > (normalTotal? normalSnack/normalTotal : 0)) {
+      findings.push({
+        body: "睡眠が十分でなかった日は、間食が増える傾向がありました。",
+        insight: "疲れを感じたとき、身体が手っ取り早いエネルギー源を求めていたのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン2: 元気な日は朝食を食べていることが多い ----
+  {
+    let highEnergyBf=0, highEnergyTotal=0, lowEnergyBf=0, lowEnergyTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      const flags = dayFoodFlags(meals[d]);
+      if (!meals[d]) return;
+      if (day.energy >= 3) { highEnergyTotal++; if (flags.ateBreakfast) highEnergyBf++; }
+      else if (day.energy <= 1) { lowEnergyTotal++; if (flags.ateBreakfast) lowEnergyBf++; }
+    });
+    if (highEnergyTotal>=2 && highEnergyBf/highEnergyTotal >= 0.6) {
+      findings.push({
+        body: "元気いっぱいな日は、朝食をしっかり食べていることが多いようです。",
+        insight: "朝のひと口が、その日一日のリズムを整えるスイッチになっているのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン3: エネルギーが低い日はパンだけの日が多い ----
+  {
+    let lowBreadOnly=0, lowTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      if (day.energy <= 1) { lowTotal++; if (flags.isBreadOnly) lowBreadOnly++; }
+    });
+    if (lowTotal>=2 && lowBreadOnly/lowTotal >= 0.4) {
+      findings.push({
+        body: "あまり元気が出なかった日は、パンだけで済ませていることが多いようです。",
+        insight: "ゆっくり食事を整える余白がない、ぎりぎりの日だったのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン4: 疲れた日は温かい食事を選ぶ ----
+  {
+    let tiredWarm=0, tiredTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      const tired = day.energy <= 1 || day.checks.work || day.checks.child;
+      if (tired) { tiredTotal++; if (flags.isWarm) tiredWarm++; }
+    });
+    if (tiredTotal>=2 && tiredWarm/tiredTotal >= 0.4) {
+      findings.push({
+        body: "心や身体が疲れている日は、温かい食事を選ぶ傾向があるようです。",
+        insight: "温もりのある食事が、ほっとひと息つく時間になっているのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン5: 仕事が忙しい日はコンビニ利用が増える ----
+  {
+    let workConv=0, workTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      if (day.checks.work) { workTotal++; if (flags.isConvenience || flags.isSimple) workConv++; }
+    });
+    if (workTotal>=2 && workConv/workTotal >= 0.4) {
+      findings.push({
+        body: "仕事がきつかった日は、コンビニや簡単な食事に頼ることが多いようです。",
+        insight: "限られた時間とエネルギーの中で、できる選択をしてきた証なのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン6: 一人時間があった日は食事内容も整いやすい ----
+  {
+    let aloneHealthy=0, aloneTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      if (day.checks.alone) { aloneTotal++; if (flags.isHealthy) aloneHealthy++; }
+    });
+    if (aloneTotal>=2 && aloneHealthy/aloneTotal >= 0.4) {
+      findings.push({
+        body: "一人の時間があった日は、食事内容も整いやすいようです。",
+        insight: "あなたにとって、一人時間は心と食事の両方を整える大切な時間なのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン7(行動パターン): ジャンクフードの翌日に健康的な食事を選ぶ ----
+  {
+    let junkThenHealthy=0, junkDays=0;
+    for (let i=0;i<dates.length-1;i++) {
+      const d=dates[i], next=dates[i+1];
+      const base = new Date(d+"T00:00:00+09:00"); base.setDate(base.getDate()+1);
+      const expectedNext = base.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+      if (expectedNext !== next) continue; // 連続した日付のみ対象
+      const flagsToday = dayFoodFlags(meals[d]);
+      const flagsNext = dayFoodFlags(meals[next]);
+      if (meals[d] && meals[next] && flagsToday.isJunk) {
+        junkDays++;
+        if (flagsNext.isHealthy) junkThenHealthy++;
+      }
+    }
+    if (junkDays>=2 && junkThenHealthy/junkDays >= 0.4) {
+      findings.push({
+        body: "ジャンクフードが続いた翌日は、納豆や味噌汁など身体に優しい食事を選ぶことが多いようです。",
+        insight: "身体が自然とバランスを取ろうとしているのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン8(行動パターン): ヘルシーな食事が続くとその後ジャンクフードに ----
+  {
+    let healthyStreakThenJunk=0, healthyStreakCount=0;
+    for (let i=0;i<dates.length-2;i++) {
+      const d1=dates[i], d2=dates[i+1], d3=dates[i+2];
+      const b1=new Date(d1+"T00:00:00+09:00"); b1.setDate(b1.getDate()+1);
+      const b2=new Date(d2+"T00:00:00+09:00"); b2.setDate(b2.getDate()+1);
+      if (b1.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"})!==d2) continue;
+      if (b2.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"})!==d3) continue;
+      if (!meals[d1]||!meals[d2]||!meals[d3]) continue;
+      const f1=dayFoodFlags(meals[d1]), f2=dayFoodFlags(meals[d2]), f3=dayFoodFlags(meals[d3]);
+      if (f1.isHealthy && f2.isHealthy) {
+        healthyStreakCount++;
+        if (f3.isJunk) healthyStreakThenJunk++;
+      }
+    }
+    if (healthyStreakCount>=1 && healthyStreakThenJunk>=1) {
+      findings.push({
+        body: "ヘルシーな食事が数日続いたあとは、自分にご褒美のような食事を選ぶことがあるようです。",
+        insight: "頑張った自分をねぎらう、自然な揺り戻しなのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン9: 外食が続くと野菜を食べたくなる ----
+  {
+    let convThenHealthy=0, convDays=0;
+    for (let i=0;i<dates.length-1;i++) {
+      const d=dates[i], next=dates[i+1];
+      const base = new Date(d+"T00:00:00+09:00"); base.setDate(base.getDate()+1);
+      const expectedNext = base.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+      if (expectedNext !== next) continue;
+      if (!meals[d]||!meals[next]) continue;
+      const flagsToday = dayFoodFlags(meals[d]);
+      const flagsNext = dayFoodFlags(meals[next]);
+      if (flagsToday.isConvenience) {
+        convDays++;
+        if (flagsNext.isHealthy) convThenHealthy++;
+      }
+    }
+    if (convDays>=2 && convThenHealthy/convDays >= 0.4) {
+      findings.push({
+        body: "外食やコンビニ利用が続いたあとは、野菜中心の食事に戻ることが多いようです。",
+        insight: "身体が自然とバランスを取ろうとしているのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン10: 睡眠不足の日は炭水化物（パンなど）が増える ----
+  {
+    let sleepLackBread=0, sleepLackTotal2=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      const isSleepLack = !!day.checks.sleep_lack || !!day.checks.sleep_rhythm;
+      if (isSleepLack) { sleepLackTotal2++; if (flags.isBreadOnly || textHasAny(flags.all, FOOD_KEYWORDS.bread)) sleepLackBread++; }
+    });
+    if (sleepLackTotal2>=2 && sleepLackBread/sleepLackTotal2 >= 0.4) {
+      findings.push({
+        body: "睡眠が十分でなかった日は、パンなど手軽な炭水化物を選ぶ傾向がありました。",
+        insight: "エネルギー不足を、身体が素早く補おうとしていたのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン11: 子どもで消耗した日の食事傾向 ----
+  {
+    let childSimple=0, childTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      if (day.checks.child) { childTotal++; if (flags.isSimple || flags.isConvenience) childSimple++; }
+    });
+    if (childTotal>=2 && childSimple/childTotal >= 0.4) {
+      findings.push({
+        body: "子どものことで消耗した日は、調理が簡単なものを選びやすいようです。",
+        insight: "限られた体力を、ちゃんと使うべきところに使えていた証なのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン12: 最高の日は甘いものを楽しんでいる ----
+  {
+    let bestSweet=0, bestTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      if (!meals[d]) return;
+      const flags = dayFoodFlags(meals[d]);
+      if (day.energy === 4) { bestTotal++; if (flags.isSweet) bestSweet++; }
+    });
+    if (bestTotal>=2 && bestSweet/bestTotal >= 0.4) {
+      findings.push({
+        body: "最高に調子の良い日は、甘いものも楽しんでいることが多いようです。",
+        insight: "心に余裕がある日は、自分を喜ばせる選択ができているのかもしれません。"
+      });
+    }
+  }
+
+  // ---- パターン13: 食事の記録自体が少ない日のエネルギー傾向 ----
+  {
+    let noMealLow=0, noMealTotal=0;
+    dates.forEach(d => {
+      const day = byDate[d];
+      const m = meals[d];
+      const recordedCount = m ? Object.values(m).filter(v=>v&&v.trim()).length : 0;
+      if (recordedCount===0) { noMealTotal++; if (day.energy<=1) noMealLow++; }
+    });
+    if (noMealTotal>=2 && noMealLow/noMealTotal >= 0.5) {
+      findings.push({
+        body: "食事の記録がない日は、エネルギーも低めなことが多いようです。",
+        insight: "食事を記録する余裕すらない、それだけ余白のない日だったのかもしれません。"
+      });
+    }
+  }
+
+  return { ready:true, have:dates.length, findings: findings.slice(0,10) };
 }
 
 // editingId: 編集対象のエントリID（null=新規）
@@ -623,10 +939,11 @@ function render() {
       ? `<button class="btn-secondary" onclick="set({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>` : "";
     const gardenBtn = `<button class="btn-secondary" onclick="set({view:'garden'})">🌱 庭を見る</button>`;
     const mealBtn = `<button class="btn-secondary" onclick="openMealView()">🍙 食事を記録する</button>`;
+    const aiBtn = `<button class="btn-secondary" onclick="set({view:'ai'})">💌 未来の自分への手紙</button>`;
     html = homeHeader("なな☆記録帳") +
       `<div class="page">${banner}
         <button class="btn-primary" onclick="set({view:'write',energy:2,checks:{},memo:'',saved:false,editingId:null})">✏️ 今日を記録する</button>
-        ${gardenBtn}${mealBtn}${histBtn}${chart}</div>`;
+        ${gardenBtn}${mealBtn}${aiBtn}${histBtn}${chart}</div>`;
   }
 
   if (view === "write") {
@@ -750,6 +1067,64 @@ function render() {
         <button class="btn-primary${mealSaved?" saved":""}" onclick="saveMealEntry()">${mealSaved?"✅ 保存したよ！":"この内容を保存する"}</button>
         ${printCard}
       </div>`;
+  }
+
+  if (view === "ai") {
+    const analysis = buildAiAnalysis(entries, meals);
+    if (!analysis.ready) {
+      html = header("💌 未来の自分への手紙","home") +
+        `<div class="page">
+          <div class="ai-intro-card">
+            <div class="ai-intro-emoji">🌱</div>
+            <div class="ai-intro-title">まだ準備中だよ</div>
+            <div class="ai-intro-text">
+              記録が${analysis.have}日分たまってるよ。<br>
+              あと${Math.max(0,3-analysis.have)}日くらい記録が増えると、<br>
+              あなたらしさが見えてくるかも。
+            </div>
+          </div>
+        </div>`;
+    } else if (analysis.findings.length === 0) {
+      html = header("💌 未来の自分への手紙","home") +
+        `<div class="page">
+          <div class="ai-intro-card">
+            <div class="ai-intro-emoji">🌿</div>
+            <div class="ai-intro-title">まだはっきりした傾向は見えてないよ</div>
+            <div class="ai-intro-text">
+              記録を続けていくうちに、<br>
+              あなたらしいリズムが見えてくるかもしれません。<br>
+              焦らず、また今度のぞいてみてね。
+            </div>
+          </div>
+        </div>`;
+    } else {
+      const cards = analysis.findings.map((f,i) => `
+        <div class="ai-finding-card">
+          <div class="ai-finding-num">🌱 今月見つけたこと ${i+1}</div>
+          <div class="ai-finding-body">${f.body}</div>
+          <div class="ai-finding-insight">${f.insight}</div>
+        </div>`).join("");
+      html = header("💌 未来の自分への手紙","home") +
+        `<div class="page">
+          <div class="ai-intro-card">
+            <div class="ai-intro-emoji">💌</div>
+            <div class="ai-intro-title">これは健康診断ではありません</div>
+            <div class="ai-intro-text">
+              ${analysis.have}日分の記録から、<br>
+              あなたの心と食事のあいだにある<br>
+              小さなリズムを見つけてみました。<br><br>
+              良い悪いではなく、<br>
+              「自分ってこうなんだ」を<br>
+              見つけるための時間にしてね。
+            </div>
+          </div>
+          ${cards}
+          <div class="ai-footer-note">
+            🌙 記録が増えるほど、新しい気づきが見つかるかもしれません。<br>
+            また今度、のぞきにきてね。
+          </div>
+        </div>`;
+    }
   }
 
   if (view === "garden") {
