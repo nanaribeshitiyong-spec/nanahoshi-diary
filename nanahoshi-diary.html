@@ -241,6 +241,36 @@
     padding: 13px 15px; font-size: 13px; line-height: 1.7; color: #5a6a8c;
     display: flex; gap: 8px; align-items: flex-start;
   }
+  .meal-date-nav {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fff; border: 1.5px solid #e3e0f5; border-radius: 14px;
+    padding: 10px 14px;
+  }
+  .meal-date-nav-btn {
+    background: none; border: none; font-size: 18px; color: #8eb8e8;
+    cursor: pointer; padding: 4px 10px; font-family: inherit;
+  }
+  .meal-date-nav-label { font-size: 14px; font-weight: 700; color: #3d2b1f; }
+  .meal-slot-card { background: #fff; border-radius: 16px; padding: 14px 16px; border: 1px solid #eeddd0; }
+  .meal-slot-header { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; font-size: 13px; font-weight: 700; color: #6a5040; }
+  .meal-textarea {
+    width: 100%; border: 1.5px solid #eeddd0; border-radius: 8px;
+    padding: 9px 11px; font-size: 13px; color: #3d2b1f;
+    background: #fdf6ee; resize: none; font-family: inherit;
+    outline: none; line-height: 1.6; box-sizing: border-box; min-height: 44px;
+  }
+  .print-date-row { display: flex; align-items: center; gap: 8px; }
+  .print-date-input {
+    flex: 1; border: 1.5px solid #eeddd0; border-radius: 8px;
+    padding: 9px 10px; font-size: 13px; color: #3d2b1f;
+    background: #fdf6ee; font-family: inherit; outline: none;
+  }
+  .print-date-sep { font-size: 12px; color: #a08878; }
+  .btn-print {
+    width: 100%; padding: 13px 0; background: #fff; color: #6a5fc8;
+    border: 2px solid #c9bdf0; border-radius: 14px; font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+  }
 </style>
 </head>
 <body>
@@ -297,6 +327,18 @@ function saveWaterDate(d) { try { localStorage.setItem(WATER_KEY, d); } catch {}
 function loadWaterMessage() { try { return localStorage.getItem(WATER_MSG_KEY) || null; } catch { return null; } }
 function saveWaterMessage(m) { try { localStorage.setItem(WATER_MSG_KEY, m); } catch {} }
 
+// 食事記録
+const MEAL_STORAGE_KEY = "nanahoshi_diary_meals_v1";
+const MEAL_SLOTS = [
+  { id:"breakfast", label:"朝ごはん", emoji:"🌅" },
+  { id:"lunch",      label:"お昼ごはん", emoji:"☀️" },
+  { id:"dinner",     label:"晩ごはん",   emoji:"🌙" },
+  { id:"snack",      label:"間食・おやつ", emoji:"🍪" },
+  { id:"drink",      label:"飲み物",     emoji:"🥤" },
+];
+function loadMeals() { try { return JSON.parse(localStorage.getItem(MEAL_STORAGE_KEY))||{}; } catch { return {}; } }
+function saveMeals(m) { try { localStorage.setItem(MEAL_STORAGE_KEY, JSON.stringify(m)); } catch {} }
+
 const GOOD_CHECK_IDS = ["sleep_ok","meal","alone"];
 const TOUGH_CHECK_IDS = ["sleep_lack","sleep_nap","sleep_rhythm","child","work","task"];
 
@@ -346,9 +388,106 @@ function gardenStats(entries) {
 }
 
 // editingId: 編集対象のエントリID（null=新規）
-let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false };
+let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null };
 
 function set(patch) { Object.assign(S,patch); render(); }
+
+// --- 食事記録 ---
+function openMealView() {
+  const date = todayJST();
+  const existing = S.meals[date] || {};
+  const weekAgo = new Date(date+"T00:00:00+09:00");
+  weekAgo.setDate(weekAgo.getDate()-6);
+  const weekAgoStr = weekAgo.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+  set({ view:"meal", mealDate:date, mealDraft:{...existing}, mealSaved:false, printFrom:weekAgoStr, printTo:date });
+}
+
+function changeMealDate(deltaDays) {
+  const base = new Date(S.mealDate+"T00:00:00+09:00");
+  base.setDate(base.getDate()+deltaDays);
+  let newDate = base.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+  const today = todayJST();
+  if (newDate > today) newDate = today;
+  const existing = S.meals[newDate] || {};
+  set({ mealDate:newDate, mealDraft:{...existing}, mealSaved:false });
+}
+
+function updateMealDraft(slotId, value) {
+  S.mealDraft = { ...S.mealDraft, [slotId]: value };
+}
+
+function saveMealEntry() {
+  const cleaned = {};
+  Object.keys(S.mealDraft).forEach(k => {
+    const v = (S.mealDraft[k]||"").trim();
+    if (v) cleaned[k] = v;
+  });
+  const nextMeals = { ...S.meals };
+  if (Object.keys(cleaned).length === 0) {
+    delete nextMeals[S.mealDate];
+  } else {
+    nextMeals[S.mealDate] = cleaned;
+  }
+  saveMeals(nextMeals);
+  set({ meals:nextMeals, mealSaved:true });
+  setTimeout(()=>set({ mealSaved:false }), 1200);
+}
+
+function printMeals() {
+  const from = S.printFrom, to = S.printTo;
+  if (!from || !to || from > to) { alert("開始日と終了日を確認してね"); return; }
+  // 範囲内の日付を列挙
+  const dates = [];
+  let cur = new Date(from+"T00:00:00+09:00");
+  const end = new Date(to+"T00:00:00+09:00");
+  while (cur <= end) {
+    dates.push(cur.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}));
+    cur.setDate(cur.getDate()+1);
+  }
+  const rows = dates.map(d => {
+    const m = S.meals[d] || {};
+    const cells = MEAL_SLOTS.map(slot => `<td>${(m[slot.id]||"").replace(/\n/g,"<br>")||"<span class='pm-empty'>―</span>"}</td>`).join("");
+    return `<tr><td class="pm-date">${fmtDate(d)}</td>${cells}</tr>`;
+  }).join("");
+  const headCells = MEAL_SLOTS.map(s=>`<th>${s.emoji} ${s.label}</th>`).join("");
+  const printHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+    <title>食事記録 ${fmtDate(from)} 〜 ${fmtDate(to)}</title>
+    <style>
+      body { font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif; color:#3d2b1f; padding:24px; margin:0; }
+      h1 { font-size:18px; margin-bottom:4px; }
+      .pm-sub { font-size:11px; color:#a08878; margin-bottom:18px; }
+      table { width:100%; border-collapse:collapse; font-size:11px; }
+      th, td { border:1px solid #ddd; padding:7px 8px; text-align:left; vertical-align:top; }
+      th { background:#f3f0ff; font-weight:700; }
+      .pm-date { white-space:nowrap; font-weight:700; background:#fdf6ee; }
+      .pm-empty { color:#ccc; }
+    </style></head>
+    <body>
+      <h1>🍙 なな☆記録帳 食事記録</h1>
+      <div class="pm-sub">${fmtDate(from)} 〜 ${fmtDate(to)}</div>
+      <table><thead><tr><th>日付</th>${headCells}</tr></thead><tbody>${rows}</tbody></table>
+    </body></html>`;
+
+  // iOS Safari はポップアップウィンドウの印刷ダイアログ起動がブロックされやすいため、
+  // 非表示iframeに描画して同一ページから印刷を呼び出す
+  let frame = document.getElementById("print-frame");
+  if (frame) frame.remove();
+  frame = document.createElement("iframe");
+  frame.id = "print-frame";
+  frame.style.position = "fixed";
+  frame.style.right = "0"; frame.style.bottom = "0";
+  frame.style.width = "0"; frame.style.height = "0";
+  frame.style.border = "0";
+  document.body.appendChild(frame);
+  const doc = frame.contentWindow.document;
+  doc.open();
+  doc.write(printHtml);
+  doc.close();
+  setTimeout(() => {
+    frame.contentWindow.focus();
+    frame.contentWindow.print();
+  }, 250);
+}
 
 function waterPlant() {
   const today = todayJST();
@@ -393,7 +532,7 @@ function openEdit(entry) {
 }
 
 function render() {
-  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage } = S;
+  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage, meals, mealDate, mealDraft, mealSaved, printFrom, printTo } = S;
   const last = entries[0] ?? null;
   const eopt = e => ENERGY[e.energy];
   let html = "";
@@ -483,10 +622,11 @@ function render() {
     const histBtn = entries.length > 0
       ? `<button class="btn-secondary" onclick="set({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>` : "";
     const gardenBtn = `<button class="btn-secondary" onclick="set({view:'garden'})">🌱 庭を見る</button>`;
+    const mealBtn = `<button class="btn-secondary" onclick="openMealView()">🍙 食事を記録する</button>`;
     html = homeHeader("なな☆記録帳") +
       `<div class="page">${banner}
         <button class="btn-primary" onclick="set({view:'write',energy:2,checks:{},memo:'',saved:false,editingId:null})">✏️ 今日を記録する</button>
-        ${gardenBtn}${histBtn}${chart}</div>`;
+        ${gardenBtn}${mealBtn}${histBtn}${chart}</div>`;
   }
 
   if (view === "write") {
@@ -571,6 +711,45 @@ function render() {
           </button>`;
         }).join("<div style='height:9px'></div>");
     html = header("これまでの記録","home") + `<div class="page">${items}</div>`;
+  }
+
+  if (view === "meal") {
+    const today = todayJST();
+    const isToday = mealDate === today;
+    const dateLabel = isToday ? `今日（${fmtDate(mealDate)}）` : fmtDate(mealDate);
+    const slotCards = MEAL_SLOTS.map(slot => {
+      const val = mealDraft[slot.id] || "";
+      return `<div class="meal-slot-card">
+        <div class="meal-slot-header"><span>${slot.emoji}</span><span>${slot.label}</span></div>
+        <textarea class="meal-textarea" rows="2" placeholder="何を食べたか、メモしてね（なくてもOK）"
+          oninput="updateMealDraft('${slot.id}', this.value)">${val}</textarea>
+      </div>`;
+    }).join("");
+    const todayJumpBtn = !isToday
+      ? `<button class="btn-secondary" onclick="changeMealDate(${Math.round((new Date(today+"T00:00:00+09:00")-new Date(mealDate+"T00:00:00+09:00"))/86400000)})">📍 今日に戻る</button>`
+      : "";
+    const printCard = `<div class="card">
+        <div class="card-title" style="color:#a08878;">食事記録を印刷する</div>
+        <div class="print-date-row">
+          <input type="date" class="print-date-input" value="${printFrom||""}" max="${today}" onchange="S.printFrom=this.value"/>
+          <span class="print-date-sep">〜</span>
+          <input type="date" class="print-date-input" value="${printTo||""}" max="${today}" onchange="S.printTo=this.value"/>
+        </div>
+        <div style="height:10px"></div>
+        <button class="btn-print" onclick="printMeals()">🖨️ この期間を印刷する</button>
+      </div>`;
+    html = header("🍙 食事記録","home") +
+      `<div class="page">
+        <div class="meal-date-nav">
+          <button class="meal-date-nav-btn" onclick="changeMealDate(-1)">‹</button>
+          <span class="meal-date-nav-label">${dateLabel}</span>
+          <button class="meal-date-nav-btn" ${isToday?"disabled style='opacity:0.3;cursor:default;'":""} onclick="changeMealDate(1)">›</button>
+        </div>
+        ${todayJumpBtn}
+        ${slotCards}
+        <button class="btn-primary${mealSaved?" saved":""}" onclick="saveMealEntry()">${mealSaved?"✅ 保存したよ！":"この内容を保存する"}</button>
+        ${printCard}
+      </div>`;
   }
 
   if (view === "garden") {
