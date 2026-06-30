@@ -109,6 +109,95 @@
     color: #b04030; border: 1.5px solid #e8b0a0;
     border-radius: 10px; font-size: 13px; cursor: pointer; font-family: inherit;
   }
+  .garden-sky {
+    border-radius: 22px; padding: 26px 16px 18px; text-align: center;
+    position: relative; overflow: hidden; transition: background 0.6s;
+  }
+  .garden-stage-label {
+    font-size: 11px; color: #fff; opacity: 0.9; margin-bottom: 4px;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .garden-plant-wrap {
+    font-size: 64px; line-height: 1; margin: 10px 0 6px;
+    filter: drop-shadow(0 4px 8px rgba(0,0,0,0.12));
+  }
+  .garden-mood-text {
+    font-size: 13px; font-weight: 700; color: #fff;
+    text-shadow: 0 1px 3px rgba(0,0,0,0.15);
+  }
+  .garden-decor-row {
+    display: flex; justify-content: center; gap: 6px;
+    font-size: 18px; margin-top: 10px; min-height: 22px;
+  }
+  .garden-progress-bar {
+    width: 100%; height: 8px; background: #eeddd0; border-radius: 5px;
+    overflow: hidden; margin-top: 6px;
+  }
+  .garden-progress-fill {
+    height: 100%; border-radius: 5px; transition: width 0.5s;
+  }
+  .garden-stat-row {
+    display: flex; gap: 8px;
+  }
+  .garden-stat-card {
+    flex: 1; background: #fff; border: 1px solid #eeddd0; border-radius: 12px;
+    padding: 11px 8px; text-align: center;
+  }
+  .garden-stat-num { font-size: 18px; font-weight: 700; color: #c8623c; }
+  .garden-stat-lbl { font-size: 10px; color: #a08878; margin-top: 2px; }
+  .garden-good-chip, .garden-tough-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 11px; padding: 5px 9px; border-radius: 8px; margin: 2px 3px 2px 0;
+  }
+  .garden-good-chip { background: #e8f5ea; color: #3a8a4a; }
+  .garden-tough-chip { background: #fdeee8; color: #b06030; }
+  .garden-plant-wrap { position: relative; }
+  .plant-emoji-inner { display: inline-block; }
+  .garden-plant-wrap.watering .plant-emoji-inner {
+    animation: plantWiggle 0.7s ease-in-out;
+  }
+  @keyframes plantWiggle {
+    0% { transform: rotate(0deg) scale(1); }
+    20% { transform: rotate(-6deg) scale(1.05); }
+    40% { transform: rotate(5deg) scale(1.08); }
+    60% { transform: rotate(-3deg) scale(1.05); }
+    80% { transform: rotate(2deg) scale(1.02); }
+    100% { transform: rotate(0deg) scale(1); }
+  }
+  .water-drop {
+    position: absolute; top: -10px; font-size: 18px;
+    animation: dropFall 0.7s ease-in forwards;
+    pointer-events: none;
+  }
+  @keyframes dropFall {
+    0% { transform: translateY(0); opacity: 0; }
+    15% { opacity: 1; }
+    100% { transform: translateY(55px); opacity: 0; }
+  }
+  .water-sparkle {
+    position: absolute; font-size: 16px;
+    animation: sparklePop 0.8s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes sparklePop {
+    0% { transform: scale(0) translateY(0); opacity: 0; }
+    30% { transform: scale(1.2) translateY(-8px); opacity: 1; }
+    100% { transform: scale(0.6) translateY(-26px); opacity: 0; }
+  }
+  .btn-water {
+    width: 100%; padding: 13px 0; background: #3aaeaa; color: #fff;
+    border: none; border-radius: 14px; font-size: 14px; font-weight: 700;
+    cursor: pointer; font-family: inherit; box-shadow: 0 4px 14px #3aaeaa38;
+    transition: opacity 0.3s;
+  }
+  .btn-water:disabled {
+    background: #e0dcd4; color: #a08878; box-shadow: none; cursor: default;
+  }
+  .water-message-card {
+    background: #fff7f0; border: 1.5px solid #ffd9b0; border-radius: 14px;
+    padding: 13px 15px; font-size: 13px; line-height: 1.7; color: #7a5040;
+    display: flex; gap: 8px; align-items: flex-start;
+  }
 </style>
 </head>
 <body>
@@ -134,6 +223,16 @@ const CHECKS = [
   { id:"task",        label:"やること多すぎた",     cat:"その他" },
 ];
 
+// エネルギー段階(0〜4)ごとの水やりメッセージ。記録がまだない日は noRecord から選ぶ
+const WATER_MESSAGES = {
+  0: ["今日はゆっくりでいいよ。水だけはちゃんと届いてるからね。","しんどい日も、水をあげてくれてありがとう。それだけで十分。"],
+  1: ["少しお疲れみたいだね。無理しないで、自分のペースでいいよ。","がんばってる証拠だよ、その疲れ。今日はここまでで大丈夫。"],
+  2: ["まあまあな1日、悪くないよ。淡々と続けてるの、すごいことだよ。","今日も水をありがとう。コツコツが一番強いんだよ。"],
+  3: ["いい調子だね！その元気、庭にもちゃんと届いてるよ。","今日のあなた、なかなかいい感じ。引き続き頼んだよ🌿"],
+  4: ["最高の日だね！庭も一緒に喜んでるよ✨","この調子！今日の元気、忘れないようにメモしておこうね。"],
+  noRecord: ["まだ今日の記録はないけど、水だけはちゃんと届いたよ。","気が向いたら今日のことも記録してね。焦らなくていいよ。","水ありがとう。記録は後でも、いつでも待ってるよ。"],
+};
+
 function todayJST() {
   return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 }
@@ -148,10 +247,95 @@ function daysSince(s) {
 function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||[]; } catch { return []; } }
 function save(e) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(e)); } catch {} }
 
+const WATER_KEY = "nanahoshi_diary_water_v1";
+const WATER_MSG_KEY = "nanahoshi_diary_water_msg_v1";
+function loadWaterDate() { try { return localStorage.getItem(WATER_KEY) || null; } catch { return null; } }
+function saveWaterDate(d) { try { localStorage.setItem(WATER_KEY, d); } catch {} }
+function loadWaterMessage() { try { return localStorage.getItem(WATER_MSG_KEY) || null; } catch { return null; } }
+function saveWaterMessage(m) { try { localStorage.setItem(WATER_MSG_KEY, m); } catch {} }
+
+const GOOD_CHECK_IDS = ["sleep_ok","meal","alone"];
+const TOUGH_CHECK_IDS = ["sleep_lack","sleep_nap","sleep_rhythm","child","work","task"];
+
+function gardenStats(entries) {
+  const totalDays = entries.length;
+  const recent = entries.slice(0,7); // 最新7件（直近の記録）
+  const avgEnergy = recent.length
+    ? recent.reduce((sum,e)=>sum+e.energy,0) / recent.length
+    : 2;
+  let goodCount = 0, toughCount = 0;
+  recent.forEach(e => {
+    GOOD_CHECK_IDS.forEach(id => { if (e.checks?.[id]) goodCount++; });
+    TOUGH_CHECK_IDS.forEach(id => { if (e.checks?.[id]) toughCount++; });
+  });
+  // 育成段階: 記録日数で決まる（責めない・減らない指標）
+  const stages = [
+    { min:0,  emoji:"🌱", label:"芽が出たばかり" },
+    { min:3,  emoji:"🌿", label:"双葉" },
+    { min:7,  emoji:"🪴", label:"若木" },
+    { min:14, emoji:"🌳", label:"育ってきた木" },
+    { min:30, emoji:"🌳", label:"立派な木" },
+  ];
+  let stageIdx = 0;
+  stages.forEach((s,i) => { if (totalDays >= s.min) stageIdx = i; });
+  const stage = stages[stageIdx];
+  const nextStage = stages[stageIdx+1];
+  const progress = nextStage
+    ? Math.min(100, Math.round(((totalDays - stage.min) / (nextStage.min - stage.min)) * 100))
+    : 100;
+
+  // 雰囲気: 直近のエネルギー平均で決定
+  let mood;
+  if (avgEnergy <= 0.8) mood = { label:"少ししおれてるね…無理しないでね", sky:["#9b9b9b","#bcb0a8"], plantEmoji:"🥀" };
+  else if (avgEnergy <= 1.8) mood = { label:"ちょっとお疲れ気味", sky:["#a9a99a","#c8b89c"], plantEmoji: stage.emoji };
+  else if (avgEnergy <= 2.8) mood = { label:"おだやかな日々", sky:["#9fc9d3","#c9e3c4"], plantEmoji: stage.emoji };
+  else if (avgEnergy <= 3.8) mood = { label:"気持ちいい風が吹いてるよ", sky:["#7ec8e3","#bfe6b0"], plantEmoji: stage.emoji };
+  else mood = { label:"庭が輝いてる✨", sky:["#6fc3e0","#ffe28a"], plantEmoji: stage.emoji };
+
+  // 装飾: グッドチェックが多いほど増える
+  let decor = [];
+  if (goodCount >= 1) decor.push("🦋");
+  if (goodCount >= 3) decor.push("🌸");
+  if (goodCount >= 5) decor.push("🐝");
+  if (goodCount >= 8) decor.push("🌈");
+
+  return { totalDays, avgEnergy, goodCount, toughCount, stage, nextStage, progress, mood, decor };
+}
+
 // editingId: 編集対象のエントリID（null=新規）
-let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null };
+let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false };
 
 function set(patch) { Object.assign(S,patch); render(); }
+
+function waterPlant() {
+  const today = todayJST();
+  if (S.wateredDate === today) return;
+  saveWaterDate(today);
+  const todayEntry = S.entries.find(e=>e.date===today);
+  const pool = todayEntry ? WATER_MESSAGES[todayEntry.energy] : WATER_MESSAGES.noRecord;
+  const msg = pool[Math.floor(Math.random()*pool.length)];
+  saveWaterMessage(msg);
+  S.wateredDate = today;
+  S.watering = true;
+  S.waterMessage = msg;
+  S.showWaterMessage = true;
+  render();
+  setTimeout(() => { S.watering = false; render(); }, 750);
+}
+
+function reopenWaterMessage() {
+  // 既存メッセージがあればそれを使う。古いバージョンの保存データなどで空の場合は新しく生成する
+  if (!S.waterMessage) {
+    const today = todayJST();
+    const todayEntry = S.entries.find(e=>e.date===today);
+    const pool = todayEntry ? WATER_MESSAGES[todayEntry.energy] : WATER_MESSAGES.noRecord;
+    const msg = pool[Math.floor(Math.random()*pool.length)];
+    saveWaterMessage(msg);
+    S.waterMessage = msg;
+  }
+  S.showWaterMessage = true;
+  render();
+}
 
 // 既存エントリを編集モードで write 画面へ
 function openEdit(entry) {
@@ -166,7 +350,7 @@ function openEdit(entry) {
 }
 
 function render() {
-  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId } = S;
+  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage } = S;
   const last = entries[0] ?? null;
   const eopt = e => ENERGY[e.energy];
   let html = "";
@@ -214,10 +398,11 @@ function render() {
     }
     const histBtn = entries.length > 0
       ? `<button class="btn-secondary" onclick="set({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>` : "";
+    const gardenBtn = `<button class="btn-secondary" onclick="set({view:'garden'})">🌱 庭を見る</button>`;
     html = header("ななほしの記録帳") +
       `<div class="page">${banner}
         <button class="btn-primary" onclick="set({view:'write',energy:2,checks:{},memo:'',saved:false,editingId:null})">✏️ 今日を記録する</button>
-        ${histBtn}${chart}</div>`;
+        ${gardenBtn}${histBtn}${chart}</div>`;
   }
 
   if (view === "write") {
@@ -302,6 +487,77 @@ function render() {
           </button>`;
         }).join("<div style='height:9px'></div>");
     html = header("これまでの記録","home") + `<div class="page">${items}</div>`;
+  }
+
+  if (view === "garden") {
+    if (entries.length === 0) {
+      html = header("🌱 庭","home") +
+        `<div class="page">
+          <div style="text-align:center;color:#a08878;padding:50px 20px;">
+            まだ種をまいてないよ。<br>記録をつけると庭が育っていくよ🌱
+          </div>
+        </div>`;
+    } else {
+      const g = gardenStats(entries);
+      const decorHtml = g.decor.length
+        ? g.decor.map(d=>`<span>${d}</span>`).join("")
+        : `<span style="font-size:11px;color:#fff;opacity:0.7;">記録を続けると賑やかになるよ</span>`;
+      const nextLabel = g.nextStage
+        ? `次は「${g.nextStage.emoji} ${g.nextStage.label}」まであと${g.nextStage.min - g.totalDays > 0 ? g.nextStage.min - g.totalDays : 0}日`
+        : `最高ランクまで育ったよ🎉`;
+      const today = todayJST();
+      const alreadyWatered = wateredDate === today;
+      const activeWaterMessage = alreadyWatered ? waterMessage : null;
+      const waterFx = watering
+        ? `<div class="water-drop" style="left:38%;">💧</div>
+           <div class="water-drop" style="left:55%;animation-delay:0.08s;">💧</div>
+           <div class="water-sparkle" style="left:30%;top:6px;animation-delay:0.25s;">✨</div>
+           <div class="water-sparkle" style="left:62%;top:2px;animation-delay:0.35s;">✨</div>`
+        : "";
+      const waterBtn = alreadyWatered
+        ? `<button class="btn-water" disabled>💧 今日はもう水やりしたよ</button>`
+        : `<button class="btn-water" onclick="waterPlant()">💧 水をあげる</button>`;
+      const reopenBtn = (alreadyWatered && !showWaterMessage)
+        ? `<button class="btn-secondary" onclick="reopenWaterMessage()">🌼 今日のメッセージをもう一度見る</button>`
+        : "";
+      const waterMsgHtml = (activeWaterMessage && showWaterMessage)
+        ? `<div class="water-message-card"><span style="font-size:16px;">🌼</span><span>${activeWaterMessage}</span></div>`
+        : "";
+      html = header("🌱 庭","home") +
+        `<div class="page">
+          <div class="garden-sky" style="background:linear-gradient(180deg, ${g.mood.sky[0]}, ${g.mood.sky[1]});">
+            <div class="garden-stage-label">${g.stage.label}</div>
+            <div class="garden-plant-wrap${watering?" watering":""}">
+              <span class="plant-emoji-inner">${g.mood.plantEmoji}</span>
+              ${waterFx}
+            </div>
+            <div class="garden-mood-text">${g.mood.label}</div>
+            <div class="garden-decor-row">${decorHtml}</div>
+          </div>
+          ${waterBtn}
+          ${reopenBtn}
+          ${waterMsgHtml}
+          <div class="card">
+            <div class="card-title" style="color:#a08878;">育成の進み具合</div>
+            <div class="garden-progress-bar"><div class="garden-progress-fill" style="width:${g.progress}%;background:#c8623c;"></div></div>
+            <div style="font-size:11px;color:#a08878;margin-top:6px;">${nextLabel}</div>
+          </div>
+          <div class="garden-stat-row">
+            <div class="garden-stat-card"><div class="garden-stat-num">${g.totalDays}</div><div class="garden-stat-lbl">記録した日数</div></div>
+            <div class="garden-stat-card"><div class="garden-stat-num">${g.avgEnergy.toFixed(1)}</div><div class="garden-stat-lbl">直近の元気度<br>(0〜4)</div></div>
+          </div>
+          <div class="card">
+            <div class="card-title" style="color:#a08878;">直近のようす（最新7件）</div>
+            <div>
+              <span class="garden-good-chip">🦋 良い兆候 ${g.goodCount}回</span>
+              <span class="garden-tough-chip">🌧️ しんどい兆候 ${g.toughCount}回</span>
+            </div>
+            <div style="font-size:11px;color:#a08878;margin-top:8px;line-height:1.6;">
+              庭は枯れたり消えたりしないよ。しんどい日が多くても、ここまで育てた記録はちゃんと残ってる。
+            </div>
+          </div>
+        </div>`;
+    }
   }
 
   if (view === "detail" && selected) {
