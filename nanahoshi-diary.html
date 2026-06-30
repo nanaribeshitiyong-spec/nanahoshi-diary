@@ -41,6 +41,11 @@
     border: 2px solid #eeddd0; border-radius: 14px; font-size: 13px;
     font-weight: 600; cursor: pointer; font-family: inherit;
   }
+  .btn-edit {
+    width: 100%; padding: 12px 0; background: #fff7f3; color: #c8623c;
+    border: 2px solid #c8623c; border-radius: 14px; font-size: 13px;
+    font-weight: 700; cursor: pointer; font-family: inherit;
+  }
   .energy-btn {
     flex: 1; padding: 9px 2px; background: #faf6f2;
     border: 2px solid #eeddd0; border-radius: 10px; cursor: pointer;
@@ -118,12 +123,15 @@ const ENERGY = [
   { emoji:"✨", label:"最高！",    color:"#3aaeaa" },
 ];
 const CHECKS = [
-  { id:"sleep", label:"睡眠が取れた" },
-  { id:"meal",  label:"ちゃんと食べた" },
-  { id:"alone", label:"一人の時間があった" },
-  { id:"child", label:"子どものことで消耗した" },
-  { id:"work",  label:"仕事がきつかった" },
-  { id:"task",  label:"やること多すぎた" },
+  { id:"sleep_ok",    label:"睡眠が取れた",       cat:"😴 睡眠" },
+  { id:"sleep_lack",  label:"睡眠不足",           cat:"😴 睡眠" },
+  { id:"sleep_nap",   label:"仮眠ぎみ",           cat:"😴 睡眠" },
+  { id:"sleep_rhythm",label:"睡眠リズム不調",      cat:"😴 睡眠" },
+  { id:"meal",        label:"ちゃんと食べた",      cat:"その他" },
+  { id:"alone",       label:"一人の時間があった",   cat:"その他" },
+  { id:"child",       label:"子どものことで消耗した",cat:"その他" },
+  { id:"work",        label:"仕事がきつかった",     cat:"その他" },
+  { id:"task",        label:"やること多すぎた",     cat:"その他" },
 ];
 
 function todayJST() {
@@ -140,21 +148,34 @@ function daysSince(s) {
 function load() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY))||[]; } catch { return []; } }
 function save(e) { try { localStorage.setItem(STORAGE_KEY,JSON.stringify(e)); } catch {} }
 
-let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false };
+// editingId: 編集対象のエントリID（null=新規）
+let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null };
 
 function set(patch) { Object.assign(S,patch); render(); }
 
+// 既存エントリを編集モードで write 画面へ
+function openEdit(entry) {
+  set({
+    view: "write",
+    energy: entry.energy,
+    checks: { ...entry.checks },
+    memo: entry.memo || "",
+    saved: false,
+    editingId: entry.id,
+  });
+}
+
 function render() {
-  const { view, entries, selected, energy, checks, memo, saved, confirming } = S;
+  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId } = S;
   const last = entries[0] ?? null;
   const eopt = e => ENERGY[e.energy];
   let html = "";
 
   // HEADER
-  const back = (v) => `<button class="back-btn" onclick="set({view:'${v}'})">←</button>`;
-  const header = (title, backTo) => `
+  const back = (v, extra) => `<button class="back-btn" onclick="${extra||''}set({view:'${v}'})">←</button>`;
+  const header = (title, backTo, backExtra) => `
     <div class="header">
-      ${backTo ? back(backTo) : ""}
+      ${backTo ? back(backTo, backExtra) : ""}
       <div>
         <div class="header-title">${title}</div>
         <div class="header-sub">週1チェック & エネルギー日記</div>
@@ -195,13 +216,18 @@ function render() {
       ? `<button class="btn-secondary" onclick="set({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>` : "";
     html = header("ななほしの記録帳") +
       `<div class="page">${banner}
-        <button class="btn-primary" onclick="set({view:'write'})">✏️ 今日を記録する</button>
+        <button class="btn-primary" onclick="set({view:'write',energy:2,checks:{},memo:'',saved:false,editingId:null})">✏️ 今日を記録する</button>
         ${histBtn}${chart}</div>`;
   }
 
   if (view === "write") {
     const today = todayJST();
-    const existing = entries.find(e=>e.date===today);
+    // 編集中のエントリの日付を特定
+    const editingEntry = editingId ? entries.find(e=>e.id===editingId) : null;
+    const targetDate = editingEntry ? editingEntry.date : today;
+    const isToday = targetDate === today;
+    const isEditMode = !!editingId;
+
     const o = ENERGY[energy];
     const energyBtns = ENERGY.map((e,i) => {
       const active = i===energy;
@@ -210,13 +236,37 @@ function render() {
         <span class="energy-label${active?" active":""}" style="${active?`color:${e.color}`:""}">${e.label}</span>
       </button>`;
     }).join("");
-    const checkBtns = CHECKS.map(c => {
+    let checkBtns = "";
+    let lastCat = null;
+    CHECKS.forEach(c => {
+      if (c.cat !== lastCat) {
+        if (lastCat !== null) checkBtns += "<div style='height:10px'></div>";
+        checkBtns += `<div style="font-size:11px;font-weight:700;color:#a08878;margin-bottom:6px;padding-left:2px;">${c.cat}</div>`;
+        lastCat = c.cat;
+      }
       const on = !!checks[c.id];
-      return `<button class="check-btn${on?" on":""}" onclick="toggleCheck('${c.id}')">
-        <span style="font-size:15px;">${on?"✅":"⬜"}</span>${c.label}</button>`;
-    }).join("<div style='height:7px'></div>");
-    const btnLabel = saved ? "✅ 記録したよ！" : existing ? "更新する" : "この記録を保存する";
-    html = header(existing?"今日の記録を更新":"今日の記録","home") +
+      checkBtns += `<button class="check-btn${on?" on":""}" onclick="toggleCheck('${c.id}')">
+        <span style="font-size:15px;">${on?"✅":"⬜"}</span>${c.label}</button><div style='height:7px'></div>`;
+    });
+
+    // ヘッダー・ボタンラベルの出し分け
+    let pageTitle, btnLabel;
+    if (isEditMode) {
+      pageTitle = `${fmtDate(targetDate)} を編集`;
+      btnLabel = saved ? "✅ 更新したよ！" : "この内容で更新する";
+    } else {
+      const existingToday = entries.find(e=>e.date===today);
+      pageTitle = existingToday ? "今日の記録を更新" : "今日の記録";
+      btnLabel = saved ? "✅ 記録したよ！" : existingToday ? "更新する" : "この記録を保存する";
+    }
+
+    // 編集モードで detail に戻るためのバック処理
+    const backAction = isEditMode
+      ? `openDetail(${editingId});return;`
+      : null;
+    const backView = isEditMode ? "detail" : "home";
+
+    html = header(pageTitle, backView, backAction) +
       `<div class="page">
         <div class="card">
           <div class="card-title">今のエネルギーは？</div>
@@ -256,11 +306,18 @@ function render() {
 
   if (view === "detail" && selected) {
     const o = ENERGY[selected.energy];
-    const checkRows = CHECKS.map(c => {
+    let checkRows = "";
+    let lastCatD = null;
+    CHECKS.forEach(c => {
+      if (c.cat !== lastCatD) {
+        if (lastCatD !== null) checkRows += `<div style="height:8px"></div>`;
+        checkRows += `<div style="font-size:11px;font-weight:700;color:#a08878;margin:6px 0 4px;padding-left:2px;">${c.cat}</div>`;
+        lastCatD = c.cat;
+      }
       const on = !!selected.checks?.[c.id];
-      return `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;opacity:${on?1:0.38};">
+      checkRows += `<div style="display:flex;align-items:center;gap:8px;padding:5px 0;font-size:13px;opacity:${on?1:0.38};">
         <span>${on?"✅":"⬜"}</span><span>${c.label}</span></div>`;
-    }).join("");
+    });
     const memoHtml = selected.memo
       ? `<div class="card"><div class="card-title" style="color:#a08878;">ひとこと</div>
          <div style="font-size:13px;line-height:1.75;white-space:pre-wrap;">${selected.memo}</div></div>` : "";
@@ -285,6 +342,7 @@ function render() {
         </div>
         <div class="card"><div class="card-title" style="color:#a08878;">その日のチェック</div>${checkRows}</div>
         ${memoHtml}
+        <button class="btn-edit" onclick="openEdit(S.selected)">✏️ この記録を編集する</button>
         ${deleteUI}
       </div>`;
   }
@@ -299,13 +357,34 @@ function toggleCheck(id) {
 
 function saveEntry() {
   const today = todayJST();
-  const existing = S.entries.find(e=>e.date===today);
-  const entry = { id: existing?.id ?? Date.now(), date: today, energy: S.energy, checks: {...S.checks}, memo: S.memo };
-  const filtered = S.entries.filter(e=>e.date!==today);
+  const isEditMode = !!S.editingId;
+
+  let targetDate, targetId;
+  if (isEditMode) {
+    const editingEntry = S.entries.find(e=>e.id===S.editingId);
+    targetDate = editingEntry.date;
+    targetId = editingEntry.id;
+  } else {
+    const existingToday = S.entries.find(e=>e.date===today);
+    targetDate = today;
+    targetId = existingToday?.id ?? Date.now();
+  }
+
+  const entry = { id: targetId, date: targetDate, energy: S.energy, checks: {...S.checks}, memo: S.memo };
+  const filtered = S.entries.filter(e=>e.id!==targetId);
   const next = [entry,...filtered].sort((a,b)=>b.date.localeCompare(a.date));
   save(next);
   set({ saved:true, entries:next });
-  setTimeout(()=>set({ view:"home", energy:2, checks:{}, memo:"", saved:false }), 900);
+
+  if (isEditMode) {
+    // 編集完了後は detail に戻る
+    setTimeout(()=>{
+      const updated = next.find(e=>e.id===targetId);
+      set({ view:"detail", selected:updated, energy:2, checks:{}, memo:"", saved:false, editingId:null, confirming:false });
+    }, 900);
+  } else {
+    setTimeout(()=>set({ view:"home", energy:2, checks:{}, memo:"", saved:false, editingId:null }), 900);
+  }
 }
 
 function deleteEntry(id) {
