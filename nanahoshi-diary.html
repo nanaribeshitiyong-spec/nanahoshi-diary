@@ -374,8 +374,10 @@ function gardenStats(entries) {
     : 2;
   let goodCount = 0, toughCount = 0;
   recent.forEach(e => {
-    GOOD_CHECK_IDS.forEach(id => { if (e.checks?.[id]) goodCount++; });
-    TOUGH_CHECK_IDS.forEach(id => { if (e.checks?.[id]) toughCount++; });
+    const hasGood = GOOD_CHECK_IDS.some(id => e.checks?.[id]);
+    const hasTough = TOUGH_CHECK_IDS.some(id => e.checks?.[id]);
+    if (hasGood) goodCount++;
+    if (hasTough) toughCount++;
   });
   // 育成段階: 記録日数で決まる（責めない・減らない指標）
   const stages = [
@@ -406,7 +408,7 @@ function gardenStats(entries) {
   if (goodCount >= 1) decor.push("🦋");
   if (goodCount >= 3) decor.push("🌸");
   if (goodCount >= 5) decor.push("🐝");
-  if (goodCount >= 8) decor.push("🌈");
+  if (goodCount >= 7) decor.push("🌈");
 
   return { totalDays, avgEnergy, goodCount, toughCount, stage, nextStage, progress, mood, decor };
 }
