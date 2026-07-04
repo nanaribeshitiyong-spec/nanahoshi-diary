@@ -322,12 +322,48 @@ const CHECKS = [
 
 // エネルギー段階(0〜4)ごとの水やりメッセージ。記録がまだない日は noRecord から選ぶ
 const WATER_MESSAGES = {
-  0: ["今日はゆっくりでいいよ。水だけはちゃんと届いてるからね。","しんどい日も、水をあげてくれてありがとう。それだけで十分。"],
-  1: ["少しお疲れみたいだね。無理しないで、自分のペースでいいよ。","がんばってる証拠だよ、その疲れ。今日はここまでで大丈夫。"],
-  2: ["まあまあな1日、悪くないよ。淡々と続けてるの、すごいことだよ。","今日も水をありがとう。コツコツが一番強いんだよ。"],
-  3: ["いい調子だね！その元気、庭にもちゃんと届いてるよ。","今日のあなた、なかなかいい感じ。引き続き頼んだよ🌿"],
-  4: ["最高の日だね！庭も一緒に喜んでるよ✨","この調子！今日の元気、忘れないようにメモしておこうね。"],
-  noRecord: ["まだ今日の記録はないけど、水だけはちゃんと届いたよ。","気が向いたら今日のことも記録してね。焦らなくていいよ。","水ありがとう。記録は後でも、いつでも待ってるよ。"],
+  0: [
+    "今日はゆっくりでいいよ。水だけはちゃんと届いてるからね。",
+    "しんどい日も、水をあげてくれてありがとう。それだけで十分。",
+    "限界の日でも庭のことを思い出してくれて、ありがとう。",
+    "今日は何もできなくていい。水をあげた、それだけでえらいよ。",
+    "つらい日ほど、小さなことが大事になるよ。水、受け取ったよ。",
+  ],
+  1: [
+    "少しお疲れみたいだね。無理しないで、自分のペースでいいよ。",
+    "がんばってる証拠だよ、その疲れ。今日はここまでで大丈夫。",
+    "しんどくても水やりに来てくれた。それだけで十分すぎるよ。",
+    "今日もお疲れさま。庭はここで静かに待ってるよ。",
+    "疲れた日こそ、こういう小さな時間が大事かもしれないね。",
+  ],
+  2: [
+    "まあまあな1日、悪くないよ。淡々と続けてるの、すごいことだよ。",
+    "今日も水をありがとう。コツコツが一番強いんだよ。",
+    "普通の日の積み重ねが、一番大切なリズムを作っていくんだよ。",
+    "まあまあな日が続くのも、安定してる証拠かもしれないね。",
+    "今日も来てくれてありがとう。それが全部。",
+  ],
+  3: [
+    "いい調子だね！その元気、庭にもちゃんと届いてるよ。",
+    "今日のあなた、なかなかいい感じ。引き続き頼んだよ🌿",
+    "元気な日の水は、特別においしそうに見えるよ。",
+    "その調子！今日みたいな日のことを、また思い出してね。",
+    "いい日だったね。庭も一緒に嬉しいよ🌸",
+  ],
+  4: [
+    "最高の日だね！庭も一緒に喜んでるよ✨",
+    "この調子！今日の元気、忘れないようにメモしておこうね。",
+    "最高な日に水やりに来てくれた。庭も輝いてるよ🌟",
+    "今日みたいな日が、また来るよ。きっと。",
+    "こんな日が続くといいね。庭もずっと応援してるよ✨",
+  ],
+  noRecord: [
+    "まだ今日の記録はないけど、水だけはちゃんと届いたよ。",
+    "気が向いたら今日のことも記録してね。焦らなくていいよ。",
+    "水ありがとう。記録は後でも、いつでも待ってるよ。",
+    "記録がなくても、水やりに来てくれた。それでいいんだよ。",
+    "今日どんな日だった？気が向いたら、教えてね。",
+  ],
 };
 
 function todayJST() {
@@ -452,6 +488,7 @@ function buildAiAnalysis(entries, meals) {
   entries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{} }; });
   const dates = Object.keys(byDate).sort();
   if (dates.length < 3) return { ready:false, have:dates.length };
+  const periodLabel = `${fmtDate(dates[0])}〜${fmtDate(dates[dates.length-1])}`;
 
   const findings = [];
   const N = dates.length;
@@ -467,7 +504,7 @@ function buildAiAnalysis(entries, meals) {
   const sushiHit = foodCount(sushiWords);
   if (sushiHit >= 1) {
     findings.push({
-      body: "この時期、お寿司や魚介類を食べることがあったようです。",
+      body: `${periodLabel}、お寿司や魚介類を食べることがあったようです。`,
       insight: "魚介にはDHAやEPAが含まれており、脳や気分にも良い影響があると言われています。おいしく食べながら、身体にも優しい選択ができていたのかもしれません。"
     });
   }
@@ -639,17 +676,17 @@ function buildAiAnalysis(entries, meals) {
   const avgEnergy = dates.reduce((s,d)=>s+byDate[d].energy,0)/N;
   if (avgEnergy <= 1.5) {
     findings.push({
-      body: "この時期、全体的にエネルギーが低めの日が多かったようです。",
+      body: `${periodLabel}、全体的にエネルギーが低めの日が多かったようです。`,
       insight: "しんどい日が続いていても、記録をつけ続けていること自体がすごいことだよ。自分のことを知ろうとしている、その積み重ねが大切なんだと思う。"
     });
   } else if (avgEnergy >= 3) {
     findings.push({
-      body: "この時期、全体的に元気な日が多かったようです。",
+      body: `${periodLabel}、全体的に元気な日が多かったようです。`,
       insight: "調子の良い時期がどんな食事・生活と重なっているか、振り返ってみると面白いかもしれません。"
     });
   } else {
     findings.push({
-      body: "この時期、元気な日もしんどい日も、両方がありました。",
+      body: `${periodLabel}、元気な日もしんどい日も、両方がありました。`,
       insight: "波があるのは自然なことです。どんな日でも記録できていることが、「自分を知る」第一歩になっています。"
     });
   }
@@ -672,7 +709,7 @@ function buildAiAnalysis(entries, meals) {
     });
   }
 
-  return { ready:true, have:N, findings: findings.slice(0,10) };
+  return { ready:true, have:N, findings: findings.slice(0,10), dateFrom:dates[0], dateTo:dates[dates.length-1] };
 }
 
 
@@ -1083,6 +1120,7 @@ function render() {
             <div class="ai-intro-emoji">💌</div>
             <div class="ai-intro-title">これは健康診断ではありません</div>
             <div class="ai-intro-text">
+              ${fmtDate(analysis.dateFrom)} 〜 ${fmtDate(analysis.dateTo)}の<br>
               ${analysis.have}日分の記録から、<br>
               あなたの心と食事のあいだにある<br>
               小さなリズムを見つけてみました。<br><br>
@@ -1160,11 +1198,20 @@ function render() {
           <div class="card">
             <div class="card-title" style="color:#a08878;">直近のようす（最新7件）</div>
             <div>
-              <span class="garden-good-chip">🦋 良い兆候 ${g.goodCount}回</span>
-              <span class="garden-tough-chip">🌧️ しんどい兆候 ${g.toughCount}回</span>
+              <span class="garden-good-chip">🦋 良い兆候 ${g.goodCount}日</span>
+              <span class="garden-tough-chip">🌧️ しんどい兆候 ${g.toughCount}日</span>
             </div>
             <div style="font-size:11px;color:#a08878;margin-top:8px;line-height:1.6;">
-              庭は枯れたり消えたりしないよ。しんどい日が多くても、ここまで育てた記録はちゃんと残ってる。
+              ${(() => {
+                const ratio = g.toughCount / Math.max(1, g.goodCount + g.toughCount);
+                if (g.goodCount === 0 && g.toughCount === 0) return "まだチェック項目の記録がないよ。次の記録のとき試してみてね。";
+                if (ratio >= 0.8) return "しんどい日が多くても、ここまで育てた記録はちゃんと残ってる。庭は消えないよ。";
+                if (ratio >= 0.5) return "しんどい日もあったけど、良い日もあったね。波があっていいんだよ。";
+                if (g.goodCount >= 5) return "良い兆候が多い時期！そのリズム、大切にしてね🌸";
+                if (g.avgEnergy >= 3) return "元気な日が多い時期だね。庭も一緒に喜んでるよ✨";
+                if (g.avgEnergy <= 1) return "お疲れ気味の時期だね。庭はここで静かに待ってるよ。";
+                return "コツコツ記録できてるね。それが一番大切なことだよ。";
+              })()}
             </div>
           </div>
         </div>`;
