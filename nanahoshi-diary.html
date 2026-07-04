@@ -497,6 +497,68 @@ function buildAiAnalysis(entries, meals) {
 
   // よく食べてた食材・メニューを集計
   const allFoodText = dates.map(d => Object.values(meals[d]||{}).join(" ")).join(" ");
+  // ひとこと日記のメモも分析に含める
+  const allMemoText = dates.map(d => byDate[d].memo || "").join(" ");
+  const allText = allFoodText + " " + allMemoText;
+
+  // メモからキーワードを拾う
+  const memoKeywords = {
+    tired: ["疲れ","つかれ","しんど","ぐったり","へとへと","だるい"],
+    happy: ["嬉しい","うれしい","楽しい","たのしい","よかった","最高","幸せ","ハッピー"],
+    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込"],
+    relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒"],
+    child: ["子ども","こども","息子","娘","学校","送迎","放課後"],
+  };
+
+  // メモに疲れワードが多い日×食事の傾向
+  const tiredMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.tired));
+  if (tiredMemoDays.length >= 1) {
+    const tiredMealSimple = tiredMemoDays.filter(d => meals[d] && dayFoodFlags(meals[d]).isSimple).length;
+    if (tiredMealSimple >= 1) {
+      findings.push({
+        body: `「疲れた」と書いた日は、簡単な食事で済ませていることが多いようです。`,
+        insight: "疲れているとき、調理のエネルギーまで残っていないことはよくあること。自分を責めなくていいよ。"
+      });
+    }
+  }
+
+  // メモに嬉しい・楽しいワードがある日
+  const happyMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.happy));
+  if (happyMemoDays.length >= 1) {
+    findings.push({
+      body: `日記に「嬉しい」「楽しい」という言葉が${happyMemoDays.length}日分ありました。`,
+      insight: "ポジティブな気持ちを言葉にできていること、それ自体が心の余裕の証かもしれません。"
+    });
+  }
+
+  // メモにストレスワードがある日
+  const stressMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.stress));
+  if (stressMemoDays.length >= 2) {
+    const stressSweet = stressMemoDays.filter(d => meals[d] && dayFoodFlags(meals[d]).isSweet).length;
+    if (stressSweet >= 1) {
+      findings.push({
+        body: `ストレスを感じた日は、甘いものに手が伸びることがあるようです。`,
+        insight: "甘いものは一時的に気分を上げてくれます。身体が「ほっとしたい」と求めているサインかもしれません。"
+      });
+    } else {
+      findings.push({
+        body: `しんどいと感じた日が${stressMemoDays.length}日ありました。`,
+        insight: "その気持ちをちゃんと言葉にできていること、すごいことだと思うよ。"
+      });
+    }
+  }
+
+  // メモにリラックスワードがある日×エネルギー
+  const relaxMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.relax));
+  if (relaxMemoDays.length >= 1) {
+    const avgRelaxEnergy = relaxMemoDays.reduce((s,d)=>s+byDate[d].energy,0)/relaxMemoDays.length;
+    if (avgRelaxEnergy >= 2.5) {
+      findings.push({
+        body: `「ゆっくりできた」「ほっとした」という日は、エネルギーも高めな傾向がありました。`,
+        insight: "休む時間がエネルギーを回復させているのかもしれません。意識的に余白を作ることの大切さが見えてきますね。"
+      });
+    }
+  }
   const foodCount = (words) => words.filter(w => allFoodText.includes(w)).length;
 
   // お寿司・魚介系
