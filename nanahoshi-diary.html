@@ -485,7 +485,7 @@ function dayFoodFlags(mealsOfDay) {
 
 function buildAiAnalysis(entries, meals) {
   const byDate = {};
-  entries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{} }; });
+  entries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{}, memo:e.memo||"" }; });
   const dates = Object.keys(byDate).sort();
   if (dates.length < 3) return { ready:false, have:dates.length };
   const periodLabel = `${fmtDate(dates[0])}〜${fmtDate(dates[dates.length-1])}`;
@@ -503,12 +503,37 @@ function buildAiAnalysis(entries, meals) {
 
   // メモからキーワードを拾う
   const memoKeywords = {
-    tired: ["疲れ","つかれ","しんど","ぐったり","へとへと","だるい"],
-    happy: ["嬉しい","うれしい","楽しい","たのしい","よかった","最高","幸せ","ハッピー"],
-    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込"],
-    relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒"],
-    child: ["子ども","こども","息子","娘","学校","送迎","放課後"],
+    tired: ["疲れ","つかれ","しんど","ぐったり","へとへと","だるい","しんどい","きつい","もう無理","限界","つらい","つら"],
+    sleepy: ["眠い","ねむい","眠たい","眠気","寝れない","寝れなかった","眠れない","眠れなかった","寝不足","睡眠不足","起きれない","起きられない"],
+    happy: ["嬉しい","うれしい","楽しい","たのしい","よかった","最高","幸せ","ハッピー","よし","やった","いい感じ","ご機嫌","テンション"],
+    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込","もやもや","ムカ","怒","頭痛","気分悪"],
+    relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒","まったり","のんき","一息","ひと息"],
+    child: ["子ども","こども","息子","娘","学校","送迎","放課後","療育","支援"],
+    hungry: ["お腹すいた","腹減","空腹","お腹空","ハラへ","ハラヘ"],
   };
+
+  // 眠い系メモ×食事・エネルギー
+  const sleepyMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.sleepy));
+  if (sleepyMemoDays.length >= 1) {
+    const sleepyAvgEnergy = sleepyMemoDays.reduce((s,d)=>s+byDate[d].energy,0)/sleepyMemoDays.length;
+    const sleepySnack = sleepyMemoDays.filter(d => meals[d] && meals[d].snack && meals[d].snack.trim()).length;
+    if (sleepySnack >= 1) {
+      findings.push({
+        body: `「眠い」と感じた日は、間食が増える傾向がありました。`,
+        insight: "眠気を感じるとき、身体が糖分でエネルギーを補おうとしていることがあります。仮眠が取れる環境があれば、食べるより短い休憩の方が回復しやすいかもしれません。"
+      });
+    } else if (sleepyAvgEnergy <= 1.5) {
+      findings.push({
+        body: `「眠い」と書いた日は、エネルギーも低めな日が多いようです。`,
+        insight: "眠気と低エネルギーはセットになりやすいですね。睡眠の質や量が、日中のエネルギーに直結しているのかもしれません。"
+      });
+    } else {
+      findings.push({
+        body: `「眠い」と書いた日が${sleepyMemoDays.length}日ありました。`,
+        insight: "眠気を感じながらも記録を続けているのはすごいことです。そういう日の食事のパターンが見えてくると、対策が立てやすくなるかもしれません。"
+      });
+    }
+  }
 
   // メモに疲れワードが多い日×食事の傾向
   const tiredMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.tired));
