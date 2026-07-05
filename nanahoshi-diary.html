@@ -295,12 +295,46 @@
   .ai-footer-note {
     font-size: 11px; color: #b0a698; text-align: center; line-height: 1.8; padding: 6px 8px 0;
   }
+  .setup-card {
+    background: linear-gradient(160deg,#eaf3fb,#f3f0ff);
+    border: 1.5px solid #e3e0f5; border-radius: 20px;
+    padding: 28px 22px; text-align: center;
+  }
+  .setup-emoji { font-size: 36px; margin-bottom: 12px; }
+  .setup-title { font-size: 17px; font-weight: 700; color: #5a4f9c; margin-bottom: 8px; }
+  .setup-sub { font-size: 12px; color: #8a8098; line-height: 1.8; margin-bottom: 18px; }
+  .setup-input {
+    width: 100%; border: 2px solid #c9bdf0; border-radius: 12px;
+    padding: 12px 14px; font-size: 16px; color: #3d2b1f;
+    background: #fff; font-family: inherit; outline: none;
+    text-align: center; box-sizing: border-box; margin-bottom: 14px;
+  }
+  .setup-hint { font-size: 11px; color: #b0a098; margin-bottom: 18px; }
+  .settings-row {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #fff; border: 1.5px solid #eeddd0; border-radius: 14px;
+    padding: 14px 16px;
+  }
+  .settings-label { font-size: 13px; color: #3d2b1f; font-weight: 600; }
+  .settings-value { font-size: 12px; color: #a08878; }
+  .settings-btn {
+    background: #f3f0ff; border: 1.5px solid #c9bdf0; border-radius: 9px;
+    padding: 7px 14px; font-size: 12px; color: #6a5fc8; font-weight: 700;
+    cursor: pointer; font-family: inherit;
+  }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <script>
 const STORAGE_KEY = "nanahoshi_diary_v2";
+const NAME_KEY = "nanahoshi_diary_name_v1";
+function loadName() { try { return localStorage.getItem(NAME_KEY) || null; } catch { return null; } }
+function saveName(n) { try { localStorage.setItem(NAME_KEY, n); } catch {} }
+function getAppTitle() {
+  const n = loadName();
+  return n ? `${n}☆記録帳` : "なな☆記録帳";
+}
 const ENERGY = [
   { emoji:"💀", label:"もう限界", color:"#e05252" },
   { emoji:"😩", label:"しんどい",  color:"#e0894a" },
@@ -502,14 +536,22 @@ function buildAiAnalysis(entries, meals) {
   const allText = allFoodText + " " + allMemoText;
 
   // メモからキーワードを拾う
+  // メモからキーワードを拾う（生活全体を網羅）
   const memoKeywords = {
-    tired: ["疲れ","つかれ","しんど","ぐったり","へとへと","だるい","しんどい","きつい","もう無理","限界","つらい","つら"],
-    sleepy: ["眠い","ねむい","眠たい","眠気","寝れない","寝れなかった","眠れない","眠れなかった","寝不足","睡眠不足","起きれない","起きられない"],
-    happy: ["嬉しい","うれしい","楽しい","たのしい","よかった","最高","幸せ","ハッピー","よし","やった","いい感じ","ご機嫌","テンション"],
-    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込","もやもや","ムカ","怒","頭痛","気分悪"],
-    relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒","まったり","のんき","一息","ひと息"],
-    child: ["子ども","こども","息子","娘","学校","送迎","放課後","療育","支援"],
-    hungry: ["お腹すいた","腹減","空腹","お腹空","ハラへ","ハラヘ"],
+    tired: ["疲れ","つかれ","しんど","ぐったり","へとへと","だるい","しんどい","きつい","もう無理","限界","つらい","つら","動けない","ヘトヘト","何もしたくない","休みたい"],
+    sleepy: ["眠い","ねむい","眠たい","眠気","寝れない","寝れなかった","眠れない","眠れなかった","寝不足","睡眠不足","起きれない","起きられない","夜中起きた","途中で起きた","早朝覚醒","寝すぎた","寝過ぎた","寝すぎ","過眠","昼まで寝た","昼寝","仮眠","二度寝","寝落ち","夜更かし","生活リズム崩れた"],
+    happy: ["嬉しい","うれしい","楽しい","たのしい","よかった","最高","幸せ","ハッピー","よし","やった","いい感じ","ご機嫌","テンション","気分いい"],
+    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込","もやもや","ムカ","怒","頭痛","気分悪","不安","悲しい","悲し"],
+    relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒","まったり","のんき","一息","ひと息","お風呂","銭湯","温泉","散歩","休憩","一人時間","趣味"],
+    busy: ["忙しい","バタバタ","予定","時間ない","やること多い","余裕ない"],
+    work: ["せどり","仕入れ","オークション","リサーチ","出品","撮影","採寸","梱包","発送","売れた","売上","利益","副業","作業した","作業できた","進んだ","終わった","達成","頑張った","掃除","片付け","家事","料理","買い物"],
+    leisure: ["ゲーム","スマホゲーム","映画","動画","YouTube","漫画","アニメ","ドラマ","音楽","推し","趣味","遊んだ","楽しかった","のんびり"],
+    screenTime: ["スマホ見すぎた","スマホやりすぎた","ゲームしすぎた","動画見すぎた","SNS見すぎた","だらだら","ゴロゴロ","何もしなかった"],
+    child: ["子ども","こども","息子","娘","長男","長女","上の子","下の子","家族","できた","できるようになった","成功","成長","挑戦","感動","かわいい","癒された","放デイ","放課後デイ","療育","支援学校","連絡帳","面談","スクールバス","移動支援","ヘルパー","事業所"],
+    support: ["学校","支援","先生","面談","相談","病院","受診","書類","手続き","電話","問い合わせ","連絡した","調整した"],
+    hungry: ["お腹すいた","腹減","空腹","お腹空"],
+    achievement: ["できた","達成","頑張った","終わった","進んだ","作業できた","売れた"],
+    recovery: ["回復","よくなった","元気になった","スッキリした","楽になった","立ち直","気分良くなった"],
   };
 
   // 眠い系メモ×食事・エネルギー
@@ -520,17 +562,149 @@ function buildAiAnalysis(entries, meals) {
     if (sleepySnack >= 1) {
       findings.push({
         body: `「眠い」と感じた日は、間食が増える傾向がありました。`,
-        insight: "眠気を感じるとき、身体が糖分でエネルギーを補おうとしていることがあります。仮眠が取れる環境があれば、食べるより短い休憩の方が回復しやすいかもしれません。"
+        insight: "眠気を感じるとき、身体が手っ取り早いエネルギーを求めていることがあるようです。"
       });
     } else if (sleepyAvgEnergy <= 1.5) {
       findings.push({
         body: `「眠い」と書いた日は、エネルギーも低めな日が多いようです。`,
-        insight: "眠気と低エネルギーはセットになりやすいですね。睡眠の質や量が、日中のエネルギーに直結しているのかもしれません。"
+        insight: "眠気と低エネルギーはセットになりやすいですね。睡眠のリズムが日中に影響しているのかもしれません。"
       });
     } else {
       findings.push({
         body: `「眠い」と書いた日が${sleepyMemoDays.length}日ありました。`,
-        insight: "眠気を感じながらも記録を続けているのはすごいことです。そういう日の食事のパターンが見えてくると、対策が立てやすくなるかもしれません。"
+        insight: "眠気を感じながらも記録を続けているのはすごいことです。そういう日の食事のパターンが見えてくると面白いかもしれません。"
+      });
+    }
+  }
+
+  // 忙しい日×食事
+  const busyDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.busy));
+  if (busyDays.length >= 1) {
+    const busySimple = busyDays.filter(d => meals[d] && dayFoodFlags(meals[d]).isSimple).length;
+    const busyEnergy = busyDays.reduce((s,d)=>s+byDate[d].energy,0)/busyDays.length;
+    if (busySimple >= 1) {
+      findings.push({
+        body: `「忙しい」「バタバタ」と書いた日は、食事が簡単なものになりやすい傾向がありました。`,
+        insight: "余裕がない日に手軽な食事を選ぶのは自然なことです。それができていること自体、限られた中でうまくやっている証かもしれません。"
+      });
+    } else if (busyEnergy <= 1.5) {
+      findings.push({
+        body: `忙しかった日は、エネルギーも低めな傾向がありました。`,
+        insight: "忙しさとエネルギーの低下が重なっていたようです。忙しい日の後に休める時間があると、回復しやすいのかもしれません。"
+      });
+    }
+  }
+
+  // 作業・達成した日×エネルギー
+  const workDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.work));
+  if (workDays.length >= 1) {
+    const workAvgEnergy = workDays.reduce((s,d)=>s+byDate[d].energy,0)/workDays.length;
+    if (workAvgEnergy >= 2.5) {
+      findings.push({
+        body: `作業や家事が進んだ日は、エネルギーも高めな傾向がありました。`,
+        insight: "「できた」という感覚がエネルギーを後押しているのかもしれません。小さな達成感が積み重なっているのかもしれませんね。"
+      });
+    } else {
+      findings.push({
+        body: `作業や副業に取り組んだ日が${workDays.length}日ありました。`,
+        insight: "日々コツコツ取り組んでいる様子が記録から見えてきます。"
+      });
+    }
+  }
+
+  // レジャー・趣味の日×エネルギー
+  const leisureDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.leisure));
+  if (leisureDays.length >= 1) {
+    const leisureAvgEnergy = leisureDays.reduce((s,d)=>s+byDate[d].energy,0)/leisureDays.length;
+    if (leisureAvgEnergy >= 2.5) {
+      findings.push({
+        body: `映画やゲーム、趣味を楽しんだ日は、気分が良めな傾向がありました。`,
+        insight: "好きなことをする時間が、気持ちのリフレッシュにつながっているのかもしれません。"
+      });
+    }
+  }
+
+  // スマホ・だらだらの日（中立的に）
+  const screenDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.screenTime));
+  if (screenDays.length >= 1) {
+    findings.push({
+      body: `「だらだら」「スマホ見すぎた」と書いた日が${screenDays.length}日ありました。`,
+      insight: "そういう日があることを記録できているのは、自分を客観的に見ている証です。意識していること自体に意味があるのかもしれません。"
+    });
+  }
+
+  // 子ども・成長系
+  const childDaysAll = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.child));
+  if (childDaysAll.length >= 1) {
+    const childHappy = childDaysAll.filter(d =>
+      textHasAny(byDate[d].memo||"", ["できた","できるようになった","成長","感動","かわいい","癒された","嬉しい"])
+    ).length;
+    const childTired = childDaysAll.filter(d =>
+      textHasAny(byDate[d].memo||"", memoKeywords.tired)
+    ).length;
+    if (childHappy >= 1 && childTired >= 1) {
+      findings.push({
+        body: `子どもとの記録の中に、嬉しかったことと消耗したことの両方がありました。`,
+        insight: "大変な日も嬉しい日も、どちらもちゃんと感じながら過ごしているんですね。"
+      });
+    } else if (childHappy >= 1) {
+      findings.push({
+        body: `子どもの成長や嬉しい出来事が${childHappy}日分記録されていました。`,
+        insight: "そういう瞬間を感じ取れていること、大切にしていきたいですね。"
+      });
+    }
+  }
+
+  // 支援・手続き系の日×疲労
+  const supportDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.support));
+  if (supportDays.length >= 1) {
+    const supportTired = supportDays.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.tired) || byDate[d].energy <= 1).length;
+    if (supportTired >= 1) {
+      findings.push({
+        body: `学校や支援・手続き関連の日は、疲れが出やすい傾向がありました。`,
+        insight: "見えにくいところで多くのエネルギーを使っているのかもしれません。そういう日の翌日は、意識的に休む時間を作れると良いかもしれませんね。"
+      });
+    }
+  }
+
+  // 回復・リラックスの翌日×エネルギー
+  const relaxDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.relax));
+  if (relaxDays.length >= 1) {
+    let recoveredNext = 0, relaxWithNext = 0;
+    for (let i=0;i<dates.length-1;i++) {
+      const d=dates[i], next=dates[i+1];
+      const base=new Date(d+"T00:00:00+09:00"); base.setDate(base.getDate()+1);
+      if (base.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"})!==next) continue;
+      if (textHasAny(byDate[d].memo||"", memoKeywords.relax)) {
+        relaxWithNext++;
+        if (byDate[next].energy > byDate[d].energy) recoveredNext++;
+      }
+    }
+    if (relaxWithNext >= 1 && recoveredNext >= 1) {
+      findings.push({
+        body: `お風呂や散歩など、休息を取った翌日はエネルギーが上がることがありました。`,
+        insight: "休むことがエネルギー回復につながっているのかもしれません。意識的に休める時間を作ることが、次の日の元気につながりそうです。"
+      });
+    }
+  }
+
+  // 達成感のある日×翌日のエネルギー
+  const achieveDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.achievement));
+  if (achieveDays.length >= 1) {
+    let achieveHighNext=0, achieveWithNext=0;
+    for (let i=0;i<dates.length-1;i++) {
+      const d=dates[i], next=dates[i+1];
+      const base=new Date(d+"T00:00:00+09:00"); base.setDate(base.getDate()+1);
+      if (base.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"})!==next) continue;
+      if (textHasAny(byDate[d].memo||"", memoKeywords.achievement)) {
+        achieveWithNext++;
+        if (byDate[next].energy >= 3) achieveHighNext++;
+      }
+    }
+    if (achieveWithNext >= 1 && achieveHighNext >= 1) {
+      findings.push({
+        body: `「できた」「達成」と書いた翌日は、エネルギーが高めなことがありました。`,
+        insight: "小さな達成感が、次の日のエネルギーを作っているのかもしれません。"
       });
     }
   }
@@ -801,9 +975,16 @@ function buildAiAnalysis(entries, meals) {
 
 
 // editingId: 編集対象のエントリID（null=新規）
-let S = { view:"home", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null };
+let S = { view: loadName() ? "home" : "setup", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null, nameInput:"" };
 
 function set(patch) { Object.assign(S,patch); render(); }
+
+function submitName() {
+  const n = (S.nameInput||"").trim();
+  if (!n) return;
+  saveName(n);
+  set({ view:"home", nameInput:"" });
+}
 
 // --- 食事記録 ---
 function openMealView() {
@@ -876,7 +1057,7 @@ function printMeals() {
       .pm-empty { color:#ccc; }
     </style></head>
     <body>
-      <h1>🍙 なな☆記録帳 食事記録</h1>
+      <h1>🍙 ${getAppTitle()} 食事記録</h1>
       <div class="pm-sub">${fmtDate(from)} 〜 ${fmtDate(to)}</div>
       <table><thead><tr><th>日付</th>${headCells}</tr></thead><tbody>${rows}</tbody></table>
     </body></html>`;
@@ -945,7 +1126,8 @@ function openEdit(entry) {
 }
 
 function render() {
-  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage, meals, mealDate, mealDraft, mealSaved, printFrom, printTo } = S;
+  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage, meals, mealDate, mealDraft, mealSaved, printFrom, printTo, nameInput } = S;
+  const appTitle = getAppTitle();
   const last = entries[0] ?? null;
   const eopt = e => ENERGY[e.energy];
   let html = "";
@@ -1002,6 +1184,54 @@ function render() {
       <div class="hh-sub">週1チェック & エネルギー日記</div>
     </div>`;
 
+  if (view === "setup") {
+    html = `<div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#fdf6ee;padding:24px;">
+      <div style="width:100%;max-width:400px;">
+        <div class="setup-card">
+          <div class="setup-emoji">🌱</div>
+          <div class="setup-title">はじめまして！</div>
+          <div class="setup-sub">あなたのお名前を教えてね。<br>あとで変更もできるよ。</div>
+          <input class="setup-input" type="text" placeholder="例：なな、ゆう、みーちゃん"
+            value="${nameInput}" oninput="S.nameInput=this.value"
+            onkeydown="if(event.key==='Enter')submitName()" maxlength="10"/>
+          <div class="setup-hint">10文字以内でどうぞ</div>
+          <button class="btn-primary" onclick="submitName()" style="font-size:15px;">
+            はじめる 🌱
+          </button>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  if (view === "settings") {
+    const currentName = loadName() || "なな";
+    html = header("⚙️ 設定","home") +
+      `<div class="page">
+        <div class="settings-row">
+          <div>
+            <div class="settings-label">アプリ名</div>
+            <div class="settings-value">${appTitle}</div>
+          </div>
+          <button class="settings-btn" onclick="set({view:'nameEdit',nameInput:'${currentName}'})">変更する</button>
+        </div>
+      </div>`;
+  }
+
+  if (view === "nameEdit") {
+    html = header("名前の変更","settings") +
+      `<div class="page">
+        <div class="setup-card">
+          <div class="setup-emoji">✏️</div>
+          <div class="setup-title">お名前を変更する</div>
+          <input class="setup-input" type="text" placeholder="例：なな、ゆう"
+            value="${nameInput}" oninput="S.nameInput=this.value"
+            onkeydown="if(event.key==='Enter')submitName()" maxlength="10"/>
+          <div class="setup-hint">10文字以内でどうぞ</div>
+          <button class="btn-primary" onclick="submitName()">変更する 🌱</button>
+        </div>
+      </div>`;
+  }
+
   if (view === "home") {
     let banner = "";
     if (last) {
@@ -1036,11 +1266,12 @@ function render() {
       ? `<button class="btn-secondary" onclick="set({view:'history'})">📖 これまでの記録を見る（${entries.length}件）</button>` : "";
     const gardenBtn = `<button class="btn-secondary" onclick="set({view:'garden'})">🌱 庭を見る</button>`;
     const mealBtn = `<button class="btn-secondary" onclick="openMealView()">🍙 食事を記録する</button>`;
-    const aiBtn = `<button class="btn-secondary" onclick="set({view:'ai'})">💌 未来の自分への手紙</button>`;
-    html = homeHeader("なな☆記録帳") +
+    const aiBtn = `<button class="btn-secondary" onclick="set({view:'ai'})">🔍 記録から見えたこと</button>`;
+    const settingsBtn = `<button class="btn-secondary" onclick="set({view:'settings'})">⚙️ 設定</button>`;
+    html = homeHeader(appTitle) +
       `<div class="page">${banner}
         <button class="btn-primary" onclick="set({view:'write',energy:2,checks:{},memo:'',saved:false,editingId:null})">✏️ 今日を記録する</button>
-        ${gardenBtn}${mealBtn}${aiBtn}${histBtn}${chart}</div>`;
+        ${mealBtn}${gardenBtn}${aiBtn}${settingsBtn}${histBtn}${chart}</div>`;
   }
 
   if (view === "write") {
@@ -1169,7 +1400,7 @@ function render() {
   if (view === "ai") {
     const analysis = buildAiAnalysis(entries, meals);
     if (!analysis.ready) {
-      html = header("💌 未来の自分への手紙","home") +
+      html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🌱</div>
@@ -1182,7 +1413,7 @@ function render() {
           </div>
         </div>`;
     } else if (analysis.findings.length === 0) {
-      html = header("💌 未来の自分への手紙","home") +
+      html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🌿</div>
@@ -1201,10 +1432,10 @@ function render() {
           <div class="ai-finding-body">${f.body}</div>
           <div class="ai-finding-insight">${f.insight}</div>
         </div>`).join("");
-      html = header("💌 未来の自分への手紙","home") +
+      html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           <div class="ai-intro-card">
-            <div class="ai-intro-emoji">💌</div>
+            <div class="ai-intro-emoji">🔍</div>
             <div class="ai-intro-title">これは健康診断ではありません</div>
             <div class="ai-intro-text">
               ${fmtDate(analysis.dateFrom)} 〜 ${fmtDate(analysis.dateTo)}の<br>
