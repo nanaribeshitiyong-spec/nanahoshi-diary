@@ -259,6 +259,22 @@
     background: #fdf6ee; resize: none; font-family: inherit;
     outline: none; line-height: 1.6; box-sizing: border-box; min-height: 44px;
   }
+  .meal-img-paste-area {
+    width: 100%; min-height: 48px; border: 1.5px dashed #c9bdf0; border-radius: 10px;
+    background: #f8f6ff; display: flex; align-items: center; justify-content: center;
+    font-size: 12px; color: #a08898; cursor: pointer; margin-top: 8px;
+    padding: 8px; box-sizing: border-box; position: relative;
+  }
+  .meal-img-paste-area:focus { outline: 2px solid #a99ee8; }
+  .meal-img-thumb {
+    width: 100%; max-height: 180px; object-fit: cover;
+    border-radius: 8px; display: block; margin-top: 8px;
+  }
+  .meal-img-remove {
+    position: absolute; top: 6px; right: 6px; background: rgba(0,0,0,0.45);
+    color: #fff; border: none; border-radius: 6px; font-size: 11px;
+    padding: 3px 8px; cursor: pointer; font-family: inherit;
+  }
   .print-date-row { display: flex; align-items: center; gap: 8px; }
   .print-date-input {
     flex: 1; border: 1.5px solid #eeddd0; border-radius: 8px;
@@ -432,6 +448,129 @@ const MEAL_SLOTS = [
 ];
 function loadMeals() { try { return JSON.parse(localStorage.getItem(MEAL_STORAGE_KEY))||{}; } catch { return {}; } }
 function saveMeals(m) { try { localStorage.setItem(MEAL_STORAGE_KEY, JSON.stringify(m)); } catch {} }
+
+// 食事画像はIndexedDBに保存（容量問題対策）
+const IMG_DB_NAME = "nanahoshi_meal_images";
+const IMG_DB_VER = 1;
+let imgDb = null;
+function openImgDb() {
+  return new Promise((res,rej) => {
+    if (imgDb) return res(imgDb);
+    const req = indexedDB.open(IMG_DB_NAME, IMG_DB_VER);
+    req.onupgradeneeded = e => e.target.result.createObjectStore("images");
+    req.onsuccess = e => { imgDb = e.target.result; res(imgDb); };
+    req.onerror = e => rej(e);
+  });
+}
+async function saveImg(key, dataUrl) {
+  const db = await openImgDb();
+  return new Promise((res,rej) => {
+    const tx = db.transaction("images","readwrite");
+    tx.objectStore("images").put(dataUrl, key);
+    tx.oncomplete = () => res();
+    tx.onerror = e => rej(e);
+  });
+}
+async function loadImg(key) {
+  const db = await openImgDb();
+  return new Promise((res,rej) => {
+    const tx = db.transaction("images","readonly");
+    const req = tx.objectStore("images").get(key);
+    req.onsuccess = () => res(req.result||null);
+    req.onerror = e => rej(e);
+  });
+}
+async function deleteImg(key) {
+  const db = await openImgDb();
+  return new Promise((res,rej) => {
+    const tx = db.transaction("images","readwrite");
+    tx.objectStore("images").delete(key);
+    tx.oncomplete = () => res();
+    tx.onerror = e => rej(e);
+  });
+}
+// 画像を圧縮してDataURLに変換
+function compressImage(file, maxW=800, quality=0.7) {
+  return new Promise(res => {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(1, maxW / Math.max(img.width, img.height));
+        const w = Math.round(img.width * scale);
+        const h = Math.round(img.height * scale);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        res(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+  });
+}
+// ペースト時の画像を処理
+async function handleMealImgPaste(event, date, slotId) {
+  const items = event.clipboardData?.items;
+  if (!items) return;
+  for (const item of items) {
+    if (item.type.startsWith("image/")) {
+      event.preventDefault();
+      const file = item.getAsFile();
+      await saveMealImgFromFile(file, date, slotId);
+      break;
+    }
+  }
+}
+
+// ファイル選択時の画像を処理
+async function handleMealImgFile(event, date, slotId) {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  await saveMealImgFromFile(file, date, slotId);
+}
+
+// 共通: 圧縮してIndexedDBに保存＆表示更新
+async function saveMealImgFromFile(file, date, slotId) {
+  const dataUrl = await compressImage(file);
+  const key = `${date}_${slotId}`;
+  await saveImg(key, dataUrl);
+  const thumb = document.getElementById(`meal-thumb-${slotId}`);
+  if (thumb) { thumb.src = dataUrl; thumb.style.display = "block"; }
+  const hint = document.getElementById(`meal-paste-hint-${slotId}`);
+  if (hint) hint.style.display = "none";
+  const removeBtn = document.getElementById(`meal-img-remove-${slotId}`);
+  if (removeBtn) removeBtn.style.display = "block";
+}
+async function removeMealImg(date, slotId) {
+  await deleteImg(`${date}_${slotId}`);
+  const thumb = document.getElementById(`meal-thumb-${slotId}`);
+  if (thumb) { thumb.src = ""; thumb.style.display = "none"; }
+  const hint = document.getElementById(`meal-paste-hint-${slotId}`);
+  if (hint) hint.style.display = "flex";
+  const removeBtn = document.getElementById(`meal-img-remove-${slotId}`);
+  if (removeBtn) removeBtn.style.display = "none";
+}
+// 画像をロードして表示
+async function loadMealImages(date) {
+  for (const slot of MEAL_SLOTS) {
+    const key = `${date}_${slot.id}`;
+    const dataUrl = await loadImg(key);
+    const thumb = document.getElementById(`meal-thumb-${slot.id}`);
+    const hint = document.getElementById(`meal-paste-hint-${slot.id}`);
+    const removeBtn = document.getElementById(`meal-img-remove-${slot.id}`);
+    if (!thumb) continue;
+    if (dataUrl) {
+      thumb.src = dataUrl; thumb.style.display = "block";
+      if (hint) hint.style.display = "none";
+      if (removeBtn) removeBtn.style.display = "block";
+    } else {
+      thumb.src = ""; thumb.style.display = "none";
+      if (hint) hint.style.display = "flex";
+      if (removeBtn) removeBtn.style.display = "none";
+    }
+  }
+}
 
 const GOOD_CHECK_IDS = ["sleep_ok","meal","alone"];
 const TOUGH_CHECK_IDS = ["sleep_lack","sleep_nap","sleep_rhythm","child","work","task"];
@@ -1104,8 +1243,8 @@ function generateGardenMessage(todayEntry) {
   if (has(["銭湯","温泉","お風呂"]) && has(["疲れ","しんど","きつ","つら"])) {
     return "忙しい一日だったんだね🌱\nでも最後に自分を休ませる時間も作れたんだね。\n今日のお水ありがとう。";
   }
-  // 達成系
-  if (has(["売れた","出品できた","作業できた","進んだ","終わった","達成","できた"])) {
+  // 達成系（完了形のみ）
+  if (has(["売れた","出品できた","出品した","作業できた","作業した","進んだ","終わった","終えた","達成した","発送できた","発送した","梱包できた","梱包した"])) {
     return "作業が進んだ日だったんだね🌸\n小さくても前に進んだこと、庭にもちゃんと届いてるよ。";
   }
   // 子ども成長・嬉しい系
@@ -1461,6 +1600,18 @@ function render() {
         <div class="meal-slot-header"><span>${slot.emoji}</span><span>${slot.label}</span></div>
         <textarea class="meal-textarea" rows="2" placeholder="何を食べたか、メモしてね（なくてもOK）"
           oninput="updateMealDraft('${slot.id}', this.value)">${val}</textarea>
+        <div style="position:relative;margin-top:8px;">
+          <input type="file" accept="image/*" id="meal-file-${slot.id}" style="display:none"
+            onchange="handleMealImgFile(event,'${mealDate}','${slot.id}')"/>
+          <div class="meal-img-paste-area" id="meal-paste-hint-${slot.id}"
+            onclick="document.getElementById('meal-file-${slot.id}').click()"
+            onpaste="handleMealImgPaste(event,'${mealDate}','${slot.id}')">
+            📷 タップして写真を選ぶ（コピペもOK）
+          </div>
+          <img id="meal-thumb-${slot.id}" class="meal-img-thumb" src="" style="display:none;"/>
+          <button class="meal-img-remove" id="meal-img-remove-${slot.id}" style="display:none;"
+            onclick="removeMealImg('${mealDate}','${slot.id}')">✕ 削除</button>
+        </div>
       </div>`;
     }).join("");
     const todayJumpBtn = !isToday
@@ -1673,6 +1824,7 @@ function render() {
   }
 
   document.getElementById("app").innerHTML = html;
+  if (view === "meal") loadMealImages(mealDate);
 }
 
 function toggleCheck(id) {
