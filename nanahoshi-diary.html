@@ -544,13 +544,13 @@ function buildAiAnalysis(entries, meals) {
     stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込","もやもや","ムカ","怒","頭痛","気分悪","不安","悲しい","悲し"],
     relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒","まったり","のんき","一息","ひと息","お風呂","銭湯","温泉","散歩","休憩","一人時間","趣味"],
     busy: ["忙しい","バタバタ","予定","時間ない","やること多い","余裕ない"],
-    work: ["せどり","仕入れ","オークション","リサーチ","出品","撮影","採寸","梱包","発送","売れた","売上","利益","副業","作業した","作業できた","進んだ","終わった","達成","頑張った","掃除","片付け","家事","料理","買い物"],
+    work: ["作業できた","作業した","出品できた","出品した","発送できた","発送した","梱包できた","梱包した","撮影できた","撮影した","仕入れできた","仕入れた","リサーチした","売れた","売上","利益","掃除できた","掃除した","片付けた","家事した","料理した","買い物した","頑張れた","終わった","進んだ","達成した"],
     leisure: ["ゲーム","スマホゲーム","映画","動画","YouTube","漫画","アニメ","ドラマ","音楽","推し","趣味","遊んだ","楽しかった","のんびり"],
     screenTime: ["スマホ見すぎた","スマホやりすぎた","ゲームしすぎた","動画見すぎた","SNS見すぎた","だらだら","ゴロゴロ","何もしなかった"],
     child: ["子ども","こども","息子","娘","長男","長女","上の子","下の子","家族","できた","できるようになった","成功","成長","挑戦","感動","かわいい","癒された","放デイ","放課後デイ","療育","支援学校","連絡帳","面談","スクールバス","移動支援","ヘルパー","事業所"],
     support: ["学校","支援","先生","面談","相談","病院","受診","書類","手続き","電話","問い合わせ","連絡した","調整した"],
     hungry: ["お腹すいた","腹減","空腹","お腹空"],
-    achievement: ["できた","達成","頑張った","終わった","進んだ","作業できた","売れた"],
+    achievement: ["できた","達成した","終わった","終えた","進んだ","作業できた","作業した","出品できた","出品した","発送できた","発送した","売れた","梱包できた","梱包した","撮影できた","撮影した","掃除できた","掃除した","片付けた","料理した","頑張れた"],
     recovery: ["回復","よくなった","元気になった","スッキリした","楽になった","立ち直","気分良くなった"],
   };
 
@@ -1083,13 +1083,97 @@ function printMeals() {
   }, 250);
 }
 
+function generateGardenMessage(todayEntry) {
+  if (!todayEntry) {
+    const noRecordMsgs = [
+      "まだ今日の記録はないけど、水だけはちゃんと届いたよ🌱\n気が向いたら今日のことも書いてね。",
+      "水ありがとう💧\n記録はいつでも待ってるよ。焦らなくていいよ。",
+      "今日はどんな日だった？\n気が向いたら、ちょっとだけ教えてね🌿",
+    ];
+    return noRecordMsgs[Math.floor(Math.random()*noRecordMsgs.length)];
+  }
+
+  const memo = todayEntry.memo || "";
+  const energy = todayEntry.energy;
+  const checks = todayEntry.checks || {};
+
+  // memoキーワードで返事を生成（優先順位順に判定）
+  const has = (words) => words.some(w => memo.includes(w));
+
+  // 疲れ+回復系（銭湯・お風呂・散歩で回復）
+  if (has(["銭湯","温泉","お風呂"]) && has(["疲れ","しんど","きつ","つら"])) {
+    return "忙しい一日だったんだね🌱\nでも最後に自分を休ませる時間も作れたんだね。\n今日のお水ありがとう。";
+  }
+  // 達成系
+  if (has(["売れた","出品できた","作業できた","進んだ","終わった","達成","できた"])) {
+    return "作業が進んだ日だったんだね🌸\n小さくても前に進んだこと、庭にもちゃんと届いてるよ。";
+  }
+  // 子ども成長・嬉しい系
+  if (has(["できるようになった","成長","感動","かわいい","癒された"]) && has(["子ども","こども","息子","娘"])) {
+    return "子どもとの嬉しい瞬間があったんだね🌿\nそういう気持ち、庭にもおすそ分けしてくれてありがとう。";
+  }
+  // 子どもで消耗
+  if ((has(["子ども","こども","息子","娘"]) && has(["疲れ","しんど","消耗","きつ"])) || checks.child) {
+    return "たくさん向き合った一日だったんだね🌿\nできたことが見えにくい日も、ちゃんと過ごした時間は残っているよ。";
+  }
+  // 眠れなかった
+  if (has(["眠れなかった","寝れなかった","寝つけない","寝付けない","夜中起きた","早朝覚醒","眠れない"])) {
+    return "長い夜だったんだね🌙\nそんな日でもここに来てくれてありがとう。\n今日は少しでも休める時間がありますように🌱";
+  }
+  // 寝すぎ（中立に）
+  if (has(["寝すぎた","寝過ぎた","寝すぎ","昼まで寝た","過眠"])) {
+    return "身体が休む時間を必要としていたのかもしれないね🌱\nゆっくり過ごした日も、庭はちゃんと育ってるよ。";
+  }
+  // 眠い・睡眠不足
+  if (has(["眠い","ねむい","眠たい","寝不足","睡眠不足"])) {
+    return "眠い一日だったんだね🌙\nそんな中でも記録しに来てくれてありがとう。\nゆっくり休んでね。";
+  }
+  // スマホ・だらだら（中立に）
+  if (has(["スマホ見すぎた","スマホやりすぎた","ゲームしすぎた","動画見すぎた","だらだら","ゴロゴロ"])) {
+    return "気づいたら時間が溶けてた日だったんだね📱\nそんな日もあるよ。今日のお水ありがとう🌱";
+  }
+  // 楽しい・嬉しい
+  if (has(["楽しかった","嬉しかった","最高","幸せ","気分いい","いい感じ"])) {
+    return "楽しい気持ちのおすそ分けありがとう🌸\n今日は庭も明るくなった気がするよ。";
+  }
+  // 忙しい
+  if (has(["忙しい","バタバタ","時間ない","余裕ない"])) {
+    return "バタバタした一日だったんだね🌿\nそんな中でも水やりに来てくれてありがとう。\n少しでもゆっくりできる時間があるといいな。";
+  }
+  // 趣味・映画・ゲーム（ポジティブに）
+  if (has(["映画","ゲーム","漫画","アニメ","音楽","推し"])) {
+    return "好きなことを楽しめた日だったんだね🌸\nそういう時間、大切にしてね。";
+  }
+  // 支援・手続き系
+  if (has(["学校","支援","療育","面談","受診","書類","手続き"])) {
+    return "見えにくいところで力を使った一日だったんだね🌿\nお疲れさま。庭はここで静かに待ってるよ。";
+  }
+  // 疲れた（一般）
+  if (has(["疲れた","しんどい","しんど","ぐったり","だるい","きつかった","つらかった","限界"])) {
+    return "疲れた日も、水やりに来てくれたね🌱\n今日はそれだけで十分だよ。ゆっくり休んでね。";
+  }
+  // ゆっくりできた
+  if (has(["ゆっくり","のんびり","まったり","ほっとした","リラックス"])) {
+    return "ゆっくりできた日だったんだね🌿\nそういう日の水は、特別おいしそうに見えるよ。";
+  }
+
+  // エネルギーベースのフォールバック
+  const energyMsgs = [
+    "今日はゆっくりでいいよ🌱\n水、ちゃんと届いたよ。",
+    "お疲れ気味の一日だったんだね🌿\n無理しないでね。",
+    "今日も一日、お疲れさま🌱\nコツコツ続けてるの、ちゃんと見てるよ。",
+    "いい調子だったんだね🌸\nその元気、庭にも届いてるよ。",
+    "最高な一日だったんだね✨\n庭も一緒に喜んでるよ！",
+  ];
+  return energyMsgs[Math.min(energy, 4)];
+}
+
 function waterPlant() {
   const today = todayJST();
   if (S.wateredDate === today) return;
   saveWaterDate(today);
   const todayEntry = S.entries.find(e=>e.date===today);
-  const pool = todayEntry ? WATER_MESSAGES[todayEntry.energy] : WATER_MESSAGES.noRecord;
-  const msg = pool[Math.floor(Math.random()*pool.length)];
+  const msg = generateGardenMessage(todayEntry);
   saveWaterMessage(msg);
   S.wateredDate = today;
   S.watering = true;
@@ -1100,17 +1184,26 @@ function waterPlant() {
 }
 
 function reopenWaterMessage() {
-  // 既存メッセージがあればそれを使う。古いバージョンの保存データなどで空の場合は新しく生成する
-  if (!S.waterMessage) {
-    const today = todayJST();
-    const todayEntry = S.entries.find(e=>e.date===today);
-    const pool = todayEntry ? WATER_MESSAGES[todayEntry.energy] : WATER_MESSAGES.noRecord;
-    const msg = pool[Math.floor(Math.random()*pool.length)];
+  const today = todayJST();
+  const todayEntry = S.entries.find(e=>e.date===today);
+  // 常に最新の記録でメッセージを再生成（⑥編集後の更新対応）
+  if (!S.waterMessage || !S.wateredDate || S.wateredDate !== today) {
+    const msg = generateGardenMessage(todayEntry);
     saveWaterMessage(msg);
     S.waterMessage = msg;
   }
   S.showWaterMessage = true;
   render();
+}
+
+// 記録編集保存後に庭メッセージを更新（⑥対応）
+function refreshGardenMessageIfToday(updatedEntry) {
+  const today = todayJST();
+  if (!updatedEntry || updatedEntry.date !== today) return;
+  if (S.wateredDate !== today) return; // 水やりしてない日は更新不要
+  const msg = generateGardenMessage(updatedEntry);
+  saveWaterMessage(msg);
+  S.waterMessage = msg;
 }
 
 // 既存エントリを編集モードで write 画面へ
@@ -1488,7 +1581,7 @@ function render() {
         ? `<button class="btn-secondary" onclick="reopenWaterMessage()">🌼 今日のメッセージをもう一度見る</button>`
         : "";
       const waterMsgHtml = (activeWaterMessage && showWaterMessage)
-        ? `<div class="water-message-card"><span style="font-size:16px;">🌼</span><span>${activeWaterMessage}</span></div>`
+        ? `<div class="water-message-card"><span style="font-size:16px;">🌼</span><span style="line-height:1.9;">${activeWaterMessage.replace(/\n/g,"<br>")}</span></div>`
         : "";
       html = header("🌱 庭","home") +
         `<div class="page">
@@ -1606,6 +1699,7 @@ function saveEntry() {
   const filtered = S.entries.filter(e=>e.id!==targetId);
   const next = [entry,...filtered].sort((a,b)=>b.date.localeCompare(a.date));
   save(next);
+  refreshGardenMessageIfToday(entry); // ⑥ 庭コメントを最新記録で更新
   set({ saved:true, entries:next });
 
   if (isEditMode) {
