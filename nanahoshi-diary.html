@@ -368,6 +368,7 @@ const CHECKS = [
   { id:"child",       label:"子どものことで消耗した",cat:"その他" },
   { id:"work",        label:"仕事がきつかった",     cat:"その他" },
   { id:"task",        label:"やること多すぎた",     cat:"その他" },
+  { id:"partner",     label:"パートナーのことで消耗した", cat:"その他" },
 ];
 
 // エネルギー段階(0〜4)ごとの水やりメッセージ。記録がまだない日は noRecord から選ぶ
@@ -573,7 +574,7 @@ async function loadMealImages(date) {
 }
 
 const GOOD_CHECK_IDS = ["sleep_ok","meal","alone"];
-const TOUGH_CHECK_IDS = ["sleep_lack","sleep_nap","sleep_rhythm","child","work","task"];
+const TOUGH_CHECK_IDS = ["sleep_lack","sleep_nap","sleep_rhythm","child","work","task","partner"];
 
 function gardenStats(entries) {
   const totalDays = entries.length;
@@ -709,7 +710,7 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
     tired: ["疲れ","つかれ","しんど","ぐったり","へとへと","だるい","しんどい","きつい","もう無理","限界","つらい","つら","動けない","ヘトヘト","何もしたくない","休みたい"],
     sleepy: ["眠い","ねむい","眠たい","眠気","寝れない","寝れなかった","眠れない","眠れなかった","寝不足","睡眠不足","起きれない","起きられない","夜中起きた","途中で起きた","早朝覚醒","寝すぎた","寝過ぎた","寝すぎ","過眠","昼まで寝た","昼寝","仮眠","二度寝","寝落ち","夜更かし","生活リズム崩れた"],
     happy: ["嬉しい","うれしい","楽しい","たのしい","よかった","最高","幸せ","ハッピー","よし","やった","いい感じ","ご機嫌","テンション","気分いい"],
-    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込","もやもや","ムカ","怒","頭痛","気分悪","不安","悲しい","悲し"],
+    stress: ["ストレス","イライラ","きつい","つらい","しんどい","落ち込","もやもや","ムカ","怒","頭痛","気分悪","不安","悲しい","悲し","喧嘩","けんか","もめた","言い合い","旦那","夫","パートナー","夫婦"],
     relax: ["ゆっくり","のんびり","ほっと","リラックス","休め","癒","まったり","のんき","一息","ひと息","お風呂","銭湯","温泉","散歩","休憩","一人時間","趣味"],
     busy: ["忙しい","バタバタ","予定","時間ない","やること多い","余裕ない"],
     work: ["作業できた","作業した","出品できた","出品した","発送できた","発送した","梱包できた","梱包した","撮影できた","撮影した","仕入れできた","仕入れた","リサーチした","売れた","売上","利益","掃除できた","掃除した","片付けた","家事した","料理した","買い物した","頑張れた","終わった","進んだ","達成した"],
@@ -1418,6 +1419,7 @@ function calcYohakuScore(entries, meals) {
     // 余白を削る要因（-点）
     if (c.work) score -= 0.5;
     if (c.child) score -= 0.5;
+    if (c.partner) score -= 0.5;
     if (c.task) score -= 0.4;
     if (c.sleep_lack || c.sleep_rhythm) score -= 0.5;
     if (textHasAny(m, ["忙しい","バタバタ","時間ない","余裕ない","あっという間","限界","無理"])) score -= 0.6;
@@ -1543,6 +1545,10 @@ function generateGardenMessage(todayEntry, entries=[], meals={}) {
   if (has(["学校","支援","療育","面談","受診","書類","手続き"])) {
     return "見えにくいところで力を使った一日だったんだね🌿\nお疲れさま。庭はここで静かに待ってるよ。" + yohakuNote;
   }
+  // パートナー・夫婦系
+  if (has(["喧嘩","けんか","もめた","言い合い"]) || (has(["旦那","夫","パートナー"]) && has(["疲れ","しんど","きつ","つら","消耗","イライラ","もやもや"]))) {
+    return "パートナーとの間でしんどいことがあったんだね🌿\nそういう日は特に疲れるよね。\n今日は自分のことを大切にしてね。" + yohakuNote;
+  }
   // 疲れた（一般）
   if (has(["疲れた","しんどい","しんど","ぐったり","だるい","きつかった","つらかった","限界"])) {
     return "疲れた日も、水やりに来てくれたね🌱\n今日はそれだけで十分だよ。ゆっくり休んでね。" + yohakuNote;
@@ -1581,12 +1587,10 @@ function waterPlant() {
 function reopenWaterMessage() {
   const today = todayJST();
   const todayEntry = S.entries.find(e=>e.date===today);
-  // 常に最新の記録でメッセージを再生成（⑥編集後の更新対応）
-  if (!S.waterMessage || !S.wateredDate || S.wateredDate !== today) {
-    const msg = generateGardenMessage(todayEntry, S.entries, S.meals);
-    saveWaterMessage(msg);
-    S.waterMessage = msg;
-  }
+  // 常に最新の記録で再生成（古いキャッシュを使わない）
+  const msg = generateGardenMessage(todayEntry, S.entries, S.meals);
+  saveWaterMessage(msg);
+  S.waterMessage = msg;
   S.showWaterMessage = true;
   render();
 }
