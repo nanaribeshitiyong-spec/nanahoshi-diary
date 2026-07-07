@@ -1475,9 +1475,9 @@ function generateGardenMessage(todayEntry, entries=[], meals={}) {
   const yohaku = calcYohakuScore(entries, meals);
   const yohakuNote = (() => {
     if (yohaku.days < 2) return "";
-    if (yohaku.level === "high") return "\n\n🌸 この1週間、少し余裕がある時間もあったみたい。" + yohakuNote;
-    if (yohaku.level === "mid") return "\n\n🌿 ぎりぎり回している1週間だったね。よく乗り切ってるよ。" + yohakuNote;
-    return "\n\n🌱 余白がほとんどない1週間だったね。今は生き延びるだけで十分だよ。" + yohakuNote;
+    if (yohaku.level === "high") return "\n\n🌸 この1週間、少し余裕がある時間もあったみたい。";
+    if (yohaku.level === "mid") return "\n\n🌿 ぎりぎり回している1週間だったね。よく乗り切ってるよ。";
+    return "\n\n🌱 余白がほとんどない1週間だったね。今は生き延びるだけで十分だよ。";
   })();
   if (!todayEntry) {
     const noRecordMsgs = [
@@ -1912,10 +1912,35 @@ function render() {
       font-size:12px;color:#a08878;cursor:pointer;font-family:inherit;">
       🔀 別の気づきを見る
     </button>`;
+    // 余白カードは全状態で共通表示
+    const yohakuAi = calcYohakuScore(entries, meals);
+    const diversityAi = checkMealDiversity(meals);
+    const yohakuBarAi = `<div style="width:100%;height:8px;background:#eeddd0;border-radius:5px;overflow:hidden;margin:8px 0 4px;">
+      <div style="width:${Math.round(yohakuAi.score*10)}%;height:100%;background:${yohakuAi.level==='high'?'#8eb8e8':yohakuAi.level==='mid'?'#a99ee8':'#e0b8d8'};border-radius:5px;"></div>
+    </div>`;
+    const diversityMsgAi = (() => {
+      if (!diversityAi || diversityAi.count === 0) return "";
+      if (yohakuAi.level === "low") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">今週は余白が少なかったね。食事のことは後回しでOK。まず自分を休ませることが先。</div>`;
+      if (yohakuAi.level === "mid") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">ぎりぎり回している週。食事は「品数より継続」でいいよ。食べられていることが大事。</div>`;
+      const missing = ["grain","protein","veggie","fermented","soup"]
+        .filter(g => !diversityAi.hitGroups.includes(g))
+        .map(g => ({"grain":"主食","protein":"たんぱく質","veggie":"野菜","fermented":"発酵食品","soup":"汁物"})[g]);
+      if (missing.length === 0) return `<div style="font-size:12px;color:#5a9a6a;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">🌸 今週は食事のバリエーションが豊富だったよ。</div>`;
+      return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">余裕がある今週、もし気が向いたら「${missing.slice(0,2).join("」「")}」をちょっと意識してみてもいいかも。</div>`;
+    })();
+    const yohakuCardAi = `<div class="ai-finding-card" style="border-color:${yohakuAi.level==='high'?'#c9def5':yohakuAi.level==='mid'?'#c9bdf0':'#e8c0d8'};">
+      <div class="ai-finding-num">${yohakuAi.emoji} 今週の余白レポート</div>
+      <div class="ai-finding-body">${yohakuAi.label}（直近${yohakuAi.days}日分の記録より）</div>
+      ${yohakuBarAi}
+      <div style="font-size:11px;color:#a08878;">余白なし ←　　　　→ 余白あり</div>
+      ${diversityMsgAi}
+    </div>`;
+
     if (!analysis.ready) {
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           ${periodTabs}
+          ${yohakuCardAi}
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🌱</div>
             <div class="ai-intro-title">この期間はまだ記録が少ないよ</div>
@@ -1930,6 +1955,7 @@ function render() {
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           ${periodTabs}
+          ${yohakuCardAi}
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🌿</div>
             <div class="ai-intro-title">まだはっきりした傾向は見えてないよ</div>
@@ -1948,40 +1974,6 @@ function render() {
           <div class="ai-finding-insight">${f.insight}</div>
         </div>`).join("");
       const periodLabel = aiPeriod==="week"?"直近7日":aiPeriod==="month"?"直近30日":"全期間";
-
-      // 余白レポートカード（固定表示）
-      const yohaku = calcYohakuScore(entries, meals);
-      const diversity = checkMealDiversity(meals);
-      const yohakuBar = `<div style="width:100%;height:8px;background:#eeddd0;border-radius:5px;overflow:hidden;margin:8px 0 4px;">
-        <div style="width:${Math.round(yohaku.score*10)}%;height:100%;background:${yohaku.level==='high'?'#8eb8e8':yohaku.level==='mid'?'#a99ee8':'#e0b8d8'};border-radius:5px;transition:width 0.5s;"></div>
-      </div>`;
-      const diversityMsg = (() => {
-        if (!diversity || diversity.count === 0) return "";
-        if (yohaku.level === "low") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
-          今週は余白が少なかったね。食事のことは後回しでOK。まず自分を休ませることが先。
-        </div>`;
-        if (yohaku.level === "mid") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
-          ぎりぎり回している週。食事は「品数より継続」でいいよ。食べられていることが大事。
-        </div>`;
-        // 余白ある場合だけ食事提案
-        const missing = ["grain","protein","veggie","fermented","soup"]
-          .filter(g => !diversity.hitGroups.includes(g))
-          .map(g => ({"grain":"主食（ご飯・麺など）","protein":"たんぱく質（肉・魚・卵・豆腐）","veggie":"野菜","fermented":"発酵食品（納豆・味噌など）","soup":"汁物"})[g]);
-        if (missing.length === 0) return `<div style="font-size:12px;color:#5a9a6a;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
-          🌸 今週は食事のバリエーションが豊富だったよ。
-        </div>`;
-        return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
-          余裕がある今週、もし気が向いたら「${missing.slice(0,2).join("」「")}」をちょっと意識してみてもいいかも。無理じゃない範囲でね。
-        </div>`;
-      })();
-      const yohakuCard = `<div class="ai-finding-card" style="border-color:${yohaku.level==='high'?'#c9def5':yohaku.level==='mid'?'#c9bdf0':'#e8c0d8'};">
-        <div class="ai-finding-num">${yohaku.emoji} 今週の余白レポート</div>
-        <div class="ai-finding-body">${yohaku.label}（${yohaku.days}日分の記録より）</div>
-        ${yohakuBar}
-        <div style="font-size:11px;color:#a08878;">余白なし ←　　　　→ 余白あり</div>
-        ${diversityMsg}
-      </div>`;
-
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           ${periodTabs}
@@ -1996,7 +1988,7 @@ function render() {
               見つけるための時間にしてね。
             </div>
           </div>
-          ${yohakuCard}
+          ${yohakuCardAi}
           ${cards}
           ${shuffleBtn}
           <div class="ai-footer-note">
