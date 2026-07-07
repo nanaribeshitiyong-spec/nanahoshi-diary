@@ -637,6 +637,21 @@ function textHasAny(text, words) {
   if (!text) return false;
   return words.some(w => text.includes(w));
 }
+
+// 否定形チェック：「〜ない」「〜なかった」「〜できない」が直後に続くワードを除外
+const NEGATION_PATTERNS = ["ない","なかった","できない","できなかった","時間はない","時間がない","余裕ない","余裕がない","無い"];
+function textHasAnyPositive(text, words) {
+  if (!text) return false;
+  return words.some(w => {
+    const idx = text.indexOf(w);
+    if (idx === -1) return false;
+    // ヒットした直後10文字以内に否定語がないかチェック
+    const after = text.slice(idx + w.length, idx + w.length + 15);
+    const before = text.slice(Math.max(0, idx - 5), idx);
+    const hasneg = NEGATION_PATTERNS.some(n => after.includes(n) || before.includes("ない"+w));
+    return !hasneg;
+  });
+}
 function dayFoodFlags(mealsOfDay) {
   if (!mealsOfDay) return {};
   const all = Object.values(mealsOfDay).join(" ");
@@ -656,9 +671,23 @@ function dayFoodFlags(mealsOfDay) {
   };
 }
 
-function buildAiAnalysis(entries, meals) {
+function buildAiAnalysis(entries, meals, period="week", seed=0) {
   const byDate = {};
-  entries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{}, memo:e.memo||"" }; });
+  // 期間フィルター
+  const todayStr = todayJST();
+  const cutoff = (() => {
+    if (period === "week") {
+      const d = new Date(todayStr+"T00:00:00+09:00"); d.setDate(d.getDate()-6);
+      return d.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+    }
+    if (period === "month") {
+      const d = new Date(todayStr+"T00:00:00+09:00"); d.setDate(d.getDate()-29);
+      return d.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+    }
+    return null;
+  })();
+  const filteredEntries = cutoff ? entries.filter(e => e.date >= cutoff) : entries;
+  filteredEntries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{}, memo:e.memo||"" }; });
   const dates = Object.keys(byDate).sort();
   if (dates.length < 3) return { ready:false, have:dates.length };
   const periodLabel = `${fmtDate(dates[0])}〜${fmtDate(dates[dates.length-1])}`;
@@ -1109,12 +1138,24 @@ function buildAiAnalysis(entries, meals) {
     });
   }
 
-  return { ready:true, have:N, findings: findings.slice(0,10), dateFrom:dates[0], dateTo:dates[dates.length-1] };
+  // シードベースのシャッフル（毎回違う順番で最大7枚表示）
+  function seededShuffle(arr, s) {
+    const a = [...arr];
+    let r = s % 2147483647 || 1;
+    for (let i = a.length-1; i>0; i--) {
+      r = (r * 16807) % 2147483647;
+      const j = r % (i+1);
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  const shuffled = seededShuffle(findings, seed);
+  return { ready:true, have:N, findings: shuffled.slice(0,7), dateFrom:dates[0], dateTo:dates[dates.length-1], period };
 }
 
 
 // editingId: 編集対象のエントリID（null=新規）
-let S = { view: loadName() ? "home" : "setup", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null, nameInput:"" };
+let S = { view: loadName() ? "home" : "setup", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null, nameInput:"", aiPeriod:"week", aiSeed:Date.now() };
 
 function set(patch) { Object.assign(S,patch); render(); }
 
@@ -1276,8 +1317,8 @@ function generateGardenMessage(todayEntry) {
     return "楽しい気持ちのおすそ分けありがとう🌸\n今日は庭も明るくなった気がするよ。";
   }
   // 忙しい
-  if (has(["忙しい","バタバタ","時間ない","余裕ない"])) {
-    return "バタバタした一日だったんだね🌿\nそんな中でも水やりに来てくれてありがとう。\n少しでもゆっくりできる時間があるといいな。";
+  if (has(["忙しい","バタバタ","時間ない","余裕ない","あっという間","時間がない","ゆっくりできる時間","休む時間"])) {
+    return "バタバタした一日だったんだね🌿\nそんな中でも水やりに来てくれてありがとう。\n少しでも息抜きできる時間があるといいな。";
   }
   // 趣味・映画・ゲーム（ポジティブに）
   if (has(["映画","ゲーム","漫画","アニメ","音楽","推し"])) {
@@ -1291,14 +1332,14 @@ function generateGardenMessage(todayEntry) {
   if (has(["疲れた","しんどい","しんど","ぐったり","だるい","きつかった","つらかった","限界"])) {
     return "疲れた日も、水やりに来てくれたね🌱\n今日はそれだけで十分だよ。ゆっくり休んでね。";
   }
-  // ゆっくりできた
-  if (has(["ゆっくり","のんびり","まったり","ほっとした","リラックス"])) {
-    return "ゆっくりできた日だったんだね🌿\nそういう日の水は、特別おいしそうに見えるよ。";
+  // ゆっくりできた（否定形除外）
+  if (textHasAnyPositive(memo, ["ゆっくりできた","のんびりできた","まったりできた","ほっとした","リラックスできた"])) {
+    return "ゆっくりできた日だったんだね🌿\nそういう時間が取れたこと、よかったね。今日のお水ありがとう。";
   }
 
   // エネルギーベースのフォールバック
   const energyMsgs = [
-    "今日はゆっくりでいいよ🌱\n水、ちゃんと届いたよ。",
+    "今日はゆっくり休んでね🌱\n水、ちゃんと届いたよ。",
     "お疲れ気味の一日だったんだね🌿\n無理しないでね。",
     "今日も一日、お疲れさま🌱\nコツコツ続けてるの、ちゃんと見てるよ。",
     "いい調子だったんだね🌸\nその元気、庭にも届いてるよ。",
@@ -1358,7 +1399,7 @@ function openEdit(entry) {
 }
 
 function render() {
-  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage, meals, mealDate, mealDraft, mealSaved, printFrom, printTo, nameInput } = S;
+  const { view, entries, selected, energy, checks, memo, saved, confirming, editingId, wateredDate, watering, waterMessage, showWaterMessage, meals, mealDate, mealDraft, mealSaved, printFrom, printTo, nameInput, aiPeriod, aiSeed } = S;
   const appTitle = getAppTitle();
   const last = entries[0] ?? null;
   const eopt = e => ENERGY[e.energy];
@@ -1642,23 +1683,38 @@ function render() {
   }
 
   if (view === "ai") {
-    const analysis = buildAiAnalysis(entries, meals);
+    const analysis = buildAiAnalysis(entries, meals, aiPeriod, aiSeed);
+    const periodTabs = `
+      <div style="display:flex;gap:6px;background:#fff;border:1.5px solid #e3e0f5;border-radius:12px;padding:5px;">
+        ${[["week","直近7日"],["month","直近30日"],["all","全期間"]].map(([k,label])=>
+          `<button onclick="set({aiPeriod:'${k}',aiSeed:Date.now()})"
+            style="flex:1;padding:8px 4px;border:none;border-radius:8px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
+            background:${aiPeriod===k?'#a99ee8':'transparent'};color:${aiPeriod===k?'#fff':'#a08878'};">${label}</button>`
+        ).join("")}
+      </div>`;
+    const shuffleBtn = `<button onclick="set({aiSeed:Date.now()})"
+      style="width:100%;padding:10px;background:#fff;border:1.5px solid #e3e0f5;border-radius:12px;
+      font-size:12px;color:#a08878;cursor:pointer;font-family:inherit;">
+      🔀 別の気づきを見る
+    </button>`;
     if (!analysis.ready) {
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
+          ${periodTabs}
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🌱</div>
-            <div class="ai-intro-title">まだ準備中だよ</div>
+            <div class="ai-intro-title">この期間はまだ記録が少ないよ</div>
             <div class="ai-intro-text">
-              記録が${analysis.have}日分たまってるよ。<br>
-              あと${Math.max(0,3-analysis.have)}日くらい記録が増えると、<br>
-              あなたらしさが見えてくるかも。
+              ${aiPeriod==="week"?"直近7日":"直近30日"}の記録が${analysis.have}日分。<br>
+              期間を「全期間」に切り替えるか、<br>
+              もう少し記録が増えると見えてくるよ。
             </div>
           </div>
         </div>`;
     } else if (analysis.findings.length === 0) {
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
+          ${periodTabs}
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🌿</div>
             <div class="ai-intro-title">まだはっきりした傾向は見えてないよ</div>
@@ -1672,29 +1728,29 @@ function render() {
     } else {
       const cards = analysis.findings.map((f,i) => `
         <div class="ai-finding-card">
-          <div class="ai-finding-num">🌱 今月見つけたこと ${i+1}</div>
+          <div class="ai-finding-num">🌱 見えてきたこと ${i+1}</div>
           <div class="ai-finding-body">${f.body}</div>
           <div class="ai-finding-insight">${f.insight}</div>
         </div>`).join("");
+      const periodLabel = aiPeriod==="week"?"直近7日":aiPeriod==="month"?"直近30日":"全期間";
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
+          ${periodTabs}
           <div class="ai-intro-card">
             <div class="ai-intro-emoji">🔍</div>
-            <div class="ai-intro-title">これは健康診断ではありません</div>
+            <div class="ai-intro-title">${periodLabel}の記録から</div>
             <div class="ai-intro-text">
-              ${fmtDate(analysis.dateFrom)} 〜 ${fmtDate(analysis.dateTo)}の<br>
-              ${analysis.have}日分の記録から、<br>
-              あなたの心と食事のあいだにある<br>
-              小さなリズムを見つけてみました。<br><br>
+              ${fmtDate(analysis.dateFrom)} 〜 ${fmtDate(analysis.dateTo)}<br>
+              ${analysis.have}日分の記録を見てみました。<br><br>
               良い悪いではなく、<br>
               「自分ってこうなんだ」を<br>
               見つけるための時間にしてね。
             </div>
           </div>
           ${cards}
+          ${shuffleBtn}
           <div class="ai-footer-note">
-            🌙 記録が増えるほど、新しい気づきが見つかるかもしれません。<br>
-            また今度、のぞきにきてね。
+            🌙 記録が増えるほど、新しい気づきが見つかるかもしれません。
           </div>
         </div>`;
     }
