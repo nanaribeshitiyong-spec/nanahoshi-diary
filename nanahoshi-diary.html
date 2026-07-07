@@ -396,9 +396,9 @@ const WATER_MESSAGES = {
   3: [
     "いい調子だね！その元気、庭にもちゃんと届いてるよ。",
     "今日のあなた、なかなかいい感じ。引き続き頼んだよ🌿",
-    "元気な日の水は、特別においしそうに見えるよ。",
     "その調子！今日みたいな日のことを、また思い出してね。",
     "いい日だったね。庭も一緒に嬉しいよ🌸",
+    "今日の元気、ちゃんと受け取ったよ✨",
   ],
   4: [
     "最高の日だね！庭も一緒に喜んでるよ✨",
@@ -1138,7 +1138,142 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
     });
   }
 
-  // シードベースのシャッフル（毎回違う順番で最大7枚表示）
+  // ===== 文脈の組み合わせ分析（複数要素を掛け合わせる）=====
+
+  // 疲れ+仕事+子ども が重なった日
+  {
+    const doubleHitDays = dates.filter(d => {
+      const c = byDate[d].checks;
+      const m = byDate[d].memo||"";
+      const workHit = c.work || textHasAny(m, ["仕事","バタバタ","忙しい"]);
+      const childHit = c.child || textHasAny(m, ["子ども","こども","息子","娘"]);
+      return workHit && childHit;
+    });
+    if (doubleHitDays.length >= 1) {
+      const avgE = doubleHitDays.reduce((s,d)=>s+byDate[d].energy,0)/doubleHitDays.length;
+      findings.push({
+        body: `仕事と子どものことが重なった日が${doubleHitDays.length}日ありました。そういう日の平均エネルギーは${avgE.toFixed(1)}でした。`,
+        insight: "2つのことが同時に来る日は、どちらか一方だけでも大変なのに、その両方を抱えていたんですね。それだけでもう十分すごいことだと思います。"
+      });
+    }
+  }
+
+  // 連続疲れ日のあとの回復パターン
+  {
+    let consecutiveTired = 0, recoveredAfter = 0;
+    for (let i=1; i<dates.length; i++) {
+      const prev = byDate[dates[i-1]], cur = byDate[dates[i]];
+      const base = new Date(dates[i-1]+"T00:00:00+09:00"); base.setDate(base.getDate()+1);
+      if (base.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}) !== dates[i]) continue;
+      const prevTired = prev.energy <= 1 || textHasAny(prev.memo||"", ["疲れ","しんど","きつ"]);
+      if (prevTired && cur.energy > prev.energy) {
+        consecutiveTired++;
+        recoveredAfter++;
+      }
+    }
+    if (recoveredAfter >= 2) {
+      findings.push({
+        body: `しんどい日の翌日は、エネルギーが回復していることが${recoveredAfter}回ありました。`,
+        insight: "しんどい日があっても、次の日にはちゃんと立て直している。そのリズム、自分では気づきにくいけど、記録を見るとちゃんと見えてきます。"
+      });
+    }
+  }
+
+  // 週の曜日パターン（記録が7日以上あれば）
+  if (N >= 7) {
+    const dayEnergy = {0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+    dates.forEach(d => {
+      const dow = new Date(d+"T00:00:00+09:00").getDay();
+      dayEnergy[dow].push(byDate[d].energy);
+    });
+    const dayAvg = Object.entries(dayEnergy)
+      .filter(([,v])=>v.length>=1)
+      .map(([k,v])=>([parseInt(k), v.reduce((a,b)=>a+b,0)/v.length]));
+    if (dayAvg.length >= 3) {
+      const highest = dayAvg.reduce((a,b)=>b[1]>a[1]?b:a);
+      const lowest = dayAvg.reduce((a,b)=>b[1]<a[1]?b:a);
+      const dayNames = ["日","月","火","水","木","金","土"];
+      if (highest[0] !== lowest[0] && (highest[1]-lowest[1]) >= 0.8) {
+        findings.push({
+          body: `${dayNames[highest[0]]}曜日は元気な日が多く、${dayNames[lowest[0]]}曜日はエネルギーが低めな傾向がありました。`,
+          insight: "曜日によってエネルギーのリズムが違うのは自然なことです。${dayNames[lowest[0]]}曜日の前後は、少し余裕を持てるといいかもしれません。"
+        });
+      }
+    }
+  }
+
+  // 睡眠チェックの組み合わせ（不足+リズム崩れが同時に多い）
+  {
+    const sleepDoubleDays = dates.filter(d => {
+      const c = byDate[d].checks;
+      return (c.sleep_lack || c.sleep_nap) && c.sleep_rhythm;
+    });
+    if (sleepDoubleDays.length >= 2) {
+      const avgE = sleepDoubleDays.reduce((s,d)=>s+byDate[d].energy,0)/sleepDoubleDays.length;
+      findings.push({
+        body: `睡眠不足とリズムの乱れが重なった日が${sleepDoubleDays.length}日ありました。その日のエネルギーは平均${avgE.toFixed(1)}でした。`,
+        insight: "睡眠の量と質が両方崩れると、特にしんどくなりやすいようです。どちらか一方でも安定させられると、変わってくるかもしれません。"
+      });
+    }
+  }
+
+  // エネルギーが高い日の共通点を探す
+  {
+    const highEDays = dates.filter(d => byDate[d].energy >= 3);
+    if (highEDays.length >= 2) {
+      const commonChecks = ["sleep_ok","alone","meal"].filter(id =>
+        highEDays.filter(d => byDate[d].checks[id]).length / highEDays.length >= 0.5
+      );
+      const commonMemo = ["散歩","お風呂","銭湯","運動","ゆっくり","のんびり"].filter(w =>
+        highEDays.filter(d => textHasAny(byDate[d].memo||"", [w])).length >= 1
+      );
+      const CHECK_LABELS = {sleep_ok:"睡眠が取れていた", alone:"一人時間があった", meal:"ちゃんと食べていた"};
+      const allCommon = [...commonChecks.map(c=>CHECK_LABELS[c]), ...commonMemo];
+      if (allCommon.length >= 1) {
+        findings.push({
+          body: `エネルギーが高かった日には「${allCommon.slice(0,2).join("」「")}」が共通してありました。`,
+          insight: "元気な日に何があったかを知ることは、自分なりの「回復パターン」を見つけることにつながります。"
+        });
+      }
+    }
+  }
+
+  // メモの文字数とエネルギーの関係
+  {
+    const longMemoDays = dates.filter(d => (byDate[d].memo||"").length >= 20);
+    const shortMemoDays = dates.filter(d => (byDate[d].memo||"").length < 20 && (byDate[d].memo||"").length > 0);
+    if (longMemoDays.length >= 2 && shortMemoDays.length >= 2) {
+      const longAvg = longMemoDays.reduce((s,d)=>s+byDate[d].energy,0)/longMemoDays.length;
+      const shortAvg = shortMemoDays.reduce((s,d)=>s+byDate[d].energy,0)/shortMemoDays.length;
+      if (Math.abs(longAvg-shortAvg) >= 0.8) {
+        const more = longAvg > shortAvg ? "たくさん書いた日" : "短めに書いた日";
+        findings.push({
+          body: `日記を${more}の方が、エネルギーが高めな傾向がありました。`,
+          insight: more === "たくさん書いた日"
+            ? "言葉にすることで気持ちが整理されて、エネルギーが上がることがあるのかもしれません。"
+            : "短く記録できた日は、余計なことを考えずシンプルに過ごせた日だったのかもしれません。"
+        });
+      }
+    }
+  }
+
+  // 食事記録がある日とない日のエネルギー差
+  {
+    const mealRecordedDays = dates.filter(d => meals[d] && Object.values(meals[d]).some(v=>v&&v.trim()));
+    const noMealDays = dates.filter(d => !meals[d] || !Object.values(meals[d]).some(v=>v&&v.trim()));
+    if (mealRecordedDays.length >= 2 && noMealDays.length >= 2) {
+      const mealAvg = mealRecordedDays.reduce((s,d)=>s+byDate[d].energy,0)/mealRecordedDays.length;
+      const noMealAvg = noMealDays.reduce((s,d)=>s+byDate[d].energy,0)/noMealDays.length;
+      if (mealAvg - noMealAvg >= 0.8) {
+        findings.push({
+          body: `食事を記録した日は、記録しなかった日よりエネルギーが高めでした。`,
+          insight: "食事を記録できる余裕があるときは、全体的に調子が良い日なのかもしれません。"
+        });
+      }
+    }
+  }
+
+  // シードベースのシャッフル
   function seededShuffle(arr, s) {
     const a = [...arr];
     let r = s % 2147483647 || 1;
@@ -1263,7 +1398,87 @@ function printMeals() {
   }, 250);
 }
 
-function generateGardenMessage(todayEntry) {
+// ===== 余白スコア計算 =====
+// 直近7日の記録から「余白があるか」を判定
+// 0〜10: 0=余白なし、10=余白たっぷり
+function calcYohakuScore(entries, meals) {
+  const today = todayJST();
+  const cutoff = new Date(today+"T00:00:00+09:00");
+  cutoff.setDate(cutoff.getDate()-6);
+  const cutoffStr = cutoff.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+  const recent = entries.filter(e => e.date >= cutoffStr);
+  if (recent.length === 0) return { score:5, level:"unknown", days:0 };
+
+  let score = 5; // 基準点
+
+  recent.forEach(e => {
+    const m = e.memo||"";
+    const c = e.checks||{};
+
+    // 余白を削る要因（-点）
+    if (c.work) score -= 0.5;
+    if (c.child) score -= 0.5;
+    if (c.task) score -= 0.4;
+    if (c.sleep_lack || c.sleep_rhythm) score -= 0.5;
+    if (textHasAny(m, ["忙しい","バタバタ","時間ない","余裕ない","あっという間","限界","無理"])) score -= 0.6;
+    if (textHasAny(m, ["疲れた","しんどい","ぐったり","きつかった","だるい"])) score -= 0.4;
+    if (e.energy <= 1) score -= 0.5;
+
+    // 余白を増やす要因（+点）
+    if (c.alone) score += 0.6;
+    if (c.sleep_ok) score += 0.5;
+    if (c.meal) score += 0.3;
+    if (textHasAny(m, ["ゆっくりできた","のんびりできた","お風呂","銭湯","散歩","休憩","リラックスできた"])) score += 0.6;
+    if (textHasAny(m, ["できた","達成した","終わった","進んだ"])) score += 0.4;
+    if (e.energy >= 3) score += 0.4;
+  });
+
+  // 0〜10にクランプ
+  score = Math.max(0, Math.min(10, score));
+
+  let level, label, emoji;
+  if (score >= 7) { level="high"; label="余白がある週"; emoji="🌸"; }
+  else if (score >= 4) { level="mid"; label="ぎりぎり回している週"; emoji="🌿"; }
+  else { level="low"; label="余白がほとんどない週"; emoji="🌱"; }
+
+  return { score, level, label, emoji, days:recent.length };
+}
+
+// 食事の多様性チェック（5品目的な観点）
+function checkMealDiversity(meals) {
+  const today = todayJST();
+  const cutoff = new Date(today+"T00:00:00+09:00");
+  cutoff.setDate(cutoff.getDate()-6);
+  const cutoffStr = cutoff.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+
+  const groups = {
+    grain: ["ご飯","米","パン","麺","うどん","そば","パスタ","ラーメン","おにぎり"],
+    protein: ["肉","魚","卵","豆腐","納豆","鶏","豚","牛","サーモン","まぐろ","えび"],
+    veggie: ["野菜","サラダ","キャベツ","レタス","トマト","きゅうり","ほうれん草","ブロッコリー","にんじん","玉ねぎ"],
+    fermented: ["味噌","みそ","納豆","ヨーグルト","漬物","キムチ"],
+    soup: ["汁","スープ","みそ汁","味噌汁","豚汁","コンソメ"],
+  };
+
+  const recentMeals = Object.entries(meals)
+    .filter(([d]) => d >= cutoffStr)
+    .map(([,m]) => Object.values(m).join(" "));
+  if (recentMeals.length === 0) return null;
+
+  const allText = recentMeals.join(" ");
+  const hitGroups = Object.entries(groups).filter(([,words]) => textHasAny(allText, words)).map(([k])=>k);
+
+  return { hitGroups, count: hitGroups.length, total: Object.keys(groups).length };
+}
+
+function generateGardenMessage(todayEntry, entries=[], meals={}) {
+  // 余白ひとこと（最後に添える）
+  const yohaku = calcYohakuScore(entries, meals);
+  const yohakuNote = (() => {
+    if (yohaku.days < 2) return "";
+    if (yohaku.level === "high") return "\n\n🌸 この1週間、少し余裕がある時間もあったみたい。" + yohakuNote;
+    if (yohaku.level === "mid") return "\n\n🌿 ぎりぎり回している1週間だったね。よく乗り切ってるよ。" + yohakuNote;
+    return "\n\n🌱 余白がほとんどない1週間だったね。今は生き延びるだけで十分だよ。" + yohakuNote;
+  })();
   if (!todayEntry) {
     const noRecordMsgs = [
       "まだ今日の記録はないけど、水だけはちゃんと届いたよ🌱\n気が向いたら今日のことも書いてね。",
@@ -1282,59 +1497,59 @@ function generateGardenMessage(todayEntry) {
 
   // 疲れ+回復系（銭湯・お風呂・散歩で回復）
   if (has(["銭湯","温泉","お風呂"]) && has(["疲れ","しんど","きつ","つら"])) {
-    return "忙しい一日だったんだね🌱\nでも最後に自分を休ませる時間も作れたんだね。\n今日のお水ありがとう。";
+    return "忙しい一日だったんだね🌱\nでも最後に自分を休ませる時間も作れたんだね。\n今日のお水ありがとう。" + yohakuNote;
   }
   // 達成系（完了形のみ）
   if (has(["売れた","出品できた","出品した","作業できた","作業した","進んだ","終わった","終えた","達成した","発送できた","発送した","梱包できた","梱包した"])) {
-    return "作業が進んだ日だったんだね🌸\n小さくても前に進んだこと、庭にもちゃんと届いてるよ。";
+    return "作業が進んだ日だったんだね🌸\n小さくても前に進んだこと、庭にもちゃんと届いてるよ。" + yohakuNote;
   }
   // 子ども成長・嬉しい系
   if (has(["できるようになった","成長","感動","かわいい","癒された"]) && has(["子ども","こども","息子","娘"])) {
-    return "子どもとの嬉しい瞬間があったんだね🌿\nそういう気持ち、庭にもおすそ分けしてくれてありがとう。";
+    return "子どもとの嬉しい瞬間があったんだね🌿\nそういう気持ち、庭にもおすそ分けしてくれてありがとう。" + yohakuNote;
   }
   // 子どもで消耗
   if ((has(["子ども","こども","息子","娘"]) && has(["疲れ","しんど","消耗","きつ"])) || checks.child) {
-    return "たくさん向き合った一日だったんだね🌿\nできたことが見えにくい日も、ちゃんと過ごした時間は残っているよ。";
+    return "たくさん向き合った一日だったんだね🌿\nできたことが見えにくい日も、ちゃんと過ごした時間は残っているよ。" + yohakuNote;
   }
   // 眠れなかった
   if (has(["眠れなかった","寝れなかった","寝つけない","寝付けない","夜中起きた","早朝覚醒","眠れない"])) {
-    return "長い夜だったんだね🌙\nそんな日でもここに来てくれてありがとう。\n今日は少しでも休める時間がありますように🌱";
+    return "長い夜だったんだね🌙\nそんな日でもここに来てくれてありがとう。\n今日は少しでも休める時間がありますように🌱" + yohakuNote;
   }
   // 寝すぎ（中立に）
   if (has(["寝すぎた","寝過ぎた","寝すぎ","昼まで寝た","過眠"])) {
-    return "身体が休む時間を必要としていたのかもしれないね🌱\nゆっくり過ごした日も、庭はちゃんと育ってるよ。";
+    return "身体が休む時間を必要としていたのかもしれないね🌱\nゆっくり過ごした日も、庭はちゃんと育ってるよ。" + yohakuNote;
   }
   // 眠い・睡眠不足
   if (has(["眠い","ねむい","眠たい","寝不足","睡眠不足"])) {
-    return "眠い一日だったんだね🌙\nそんな中でも記録しに来てくれてありがとう。\nゆっくり休んでね。";
+    return "眠い一日だったんだね🌙\nそんな中でも記録しに来てくれてありがとう。\nゆっくり休んでね。" + yohakuNote;
   }
   // スマホ・だらだら（中立に）
   if (has(["スマホ見すぎた","スマホやりすぎた","ゲームしすぎた","動画見すぎた","だらだら","ゴロゴロ"])) {
-    return "気づいたら時間が溶けてた日だったんだね📱\nそんな日もあるよ。今日のお水ありがとう🌱";
+    return "気づいたら時間が溶けてた日だったんだね📱\nそんな日もあるよ。今日のお水ありがとう🌱" + yohakuNote;
   }
   // 楽しい・嬉しい
   if (has(["楽しかった","嬉しかった","最高","幸せ","気分いい","いい感じ"])) {
-    return "楽しい気持ちのおすそ分けありがとう🌸\n今日は庭も明るくなった気がするよ。";
+    return "楽しい気持ちのおすそ分けありがとう🌸\n今日は庭も明るくなった気がするよ。" + yohakuNote;
   }
   // 忙しい
   if (has(["忙しい","バタバタ","時間ない","余裕ない","あっという間","時間がない","ゆっくりできる時間","休む時間"])) {
-    return "バタバタした一日だったんだね🌿\nそんな中でも水やりに来てくれてありがとう。\n少しでも息抜きできる時間があるといいな。";
+    return "バタバタした一日だったんだね🌿\nそんな中でも水やりに来てくれてありがとう。\n少しでも息抜きできる時間があるといいな。" + yohakuNote;
   }
   // 趣味・映画・ゲーム（ポジティブに）
   if (has(["映画","ゲーム","漫画","アニメ","音楽","推し"])) {
-    return "好きなことを楽しめた日だったんだね🌸\nそういう時間、大切にしてね。";
+    return "好きなことを楽しめた日だったんだね🌸\nそういう時間、大切にしてね。" + yohakuNote;
   }
   // 支援・手続き系
   if (has(["学校","支援","療育","面談","受診","書類","手続き"])) {
-    return "見えにくいところで力を使った一日だったんだね🌿\nお疲れさま。庭はここで静かに待ってるよ。";
+    return "見えにくいところで力を使った一日だったんだね🌿\nお疲れさま。庭はここで静かに待ってるよ。" + yohakuNote;
   }
   // 疲れた（一般）
   if (has(["疲れた","しんどい","しんど","ぐったり","だるい","きつかった","つらかった","限界"])) {
-    return "疲れた日も、水やりに来てくれたね🌱\n今日はそれだけで十分だよ。ゆっくり休んでね。";
+    return "疲れた日も、水やりに来てくれたね🌱\n今日はそれだけで十分だよ。ゆっくり休んでね。" + yohakuNote;
   }
   // ゆっくりできた（否定形除外）
   if (textHasAnyPositive(memo, ["ゆっくりできた","のんびりできた","まったりできた","ほっとした","リラックスできた"])) {
-    return "ゆっくりできた日だったんだね🌿\nそういう時間が取れたこと、よかったね。今日のお水ありがとう。";
+    return "ゆっくりできた日だったんだね🌿\nそういう時間が取れたこと、よかったね。今日のお水ありがとう。" + yohakuNote;
   }
 
   // エネルギーベースのフォールバック
@@ -1345,7 +1560,7 @@ function generateGardenMessage(todayEntry) {
     "いい調子だったんだね🌸\nその元気、庭にも届いてるよ。",
     "最高な一日だったんだね✨\n庭も一緒に喜んでるよ！",
   ];
-  return energyMsgs[Math.min(energy, 4)];
+  return energyMsgs[Math.min(energy, 4)] + yohakuNote;
 }
 
 function waterPlant() {
@@ -1353,7 +1568,7 @@ function waterPlant() {
   if (S.wateredDate === today) return;
   saveWaterDate(today);
   const todayEntry = S.entries.find(e=>e.date===today);
-  const msg = generateGardenMessage(todayEntry);
+  const msg = generateGardenMessage(todayEntry, S.entries, S.meals);
   saveWaterMessage(msg);
   S.wateredDate = today;
   S.watering = true;
@@ -1368,7 +1583,7 @@ function reopenWaterMessage() {
   const todayEntry = S.entries.find(e=>e.date===today);
   // 常に最新の記録でメッセージを再生成（⑥編集後の更新対応）
   if (!S.waterMessage || !S.wateredDate || S.wateredDate !== today) {
-    const msg = generateGardenMessage(todayEntry);
+    const msg = generateGardenMessage(todayEntry, S.entries, S.meals);
     saveWaterMessage(msg);
     S.waterMessage = msg;
   }
@@ -1381,7 +1596,7 @@ function refreshGardenMessageIfToday(updatedEntry) {
   const today = todayJST();
   if (!updatedEntry || updatedEntry.date !== today) return;
   if (S.wateredDate !== today) return; // 水やりしてない日は更新不要
-  const msg = generateGardenMessage(updatedEntry);
+  const msg = generateGardenMessage(updatedEntry, S.entries, S.meals);
   saveWaterMessage(msg);
   S.waterMessage = msg;
 }
@@ -1733,6 +1948,40 @@ function render() {
           <div class="ai-finding-insight">${f.insight}</div>
         </div>`).join("");
       const periodLabel = aiPeriod==="week"?"直近7日":aiPeriod==="month"?"直近30日":"全期間";
+
+      // 余白レポートカード（固定表示）
+      const yohaku = calcYohakuScore(entries, meals);
+      const diversity = checkMealDiversity(meals);
+      const yohakuBar = `<div style="width:100%;height:8px;background:#eeddd0;border-radius:5px;overflow:hidden;margin:8px 0 4px;">
+        <div style="width:${Math.round(yohaku.score*10)}%;height:100%;background:${yohaku.level==='high'?'#8eb8e8':yohaku.level==='mid'?'#a99ee8':'#e0b8d8'};border-radius:5px;transition:width 0.5s;"></div>
+      </div>`;
+      const diversityMsg = (() => {
+        if (!diversity || diversity.count === 0) return "";
+        if (yohaku.level === "low") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
+          今週は余白が少なかったね。食事のことは後回しでOK。まず自分を休ませることが先。
+        </div>`;
+        if (yohaku.level === "mid") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
+          ぎりぎり回している週。食事は「品数より継続」でいいよ。食べられていることが大事。
+        </div>`;
+        // 余白ある場合だけ食事提案
+        const missing = ["grain","protein","veggie","fermented","soup"]
+          .filter(g => !diversity.hitGroups.includes(g))
+          .map(g => ({"grain":"主食（ご飯・麺など）","protein":"たんぱく質（肉・魚・卵・豆腐）","veggie":"野菜","fermented":"発酵食品（納豆・味噌など）","soup":"汁物"})[g]);
+        if (missing.length === 0) return `<div style="font-size:12px;color:#5a9a6a;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
+          🌸 今週は食事のバリエーションが豊富だったよ。
+        </div>`;
+        return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">
+          余裕がある今週、もし気が向いたら「${missing.slice(0,2).join("」「")}」をちょっと意識してみてもいいかも。無理じゃない範囲でね。
+        </div>`;
+      })();
+      const yohakuCard = `<div class="ai-finding-card" style="border-color:${yohaku.level==='high'?'#c9def5':yohaku.level==='mid'?'#c9bdf0':'#e8c0d8'};">
+        <div class="ai-finding-num">${yohaku.emoji} 今週の余白レポート</div>
+        <div class="ai-finding-body">${yohaku.label}（${yohaku.days}日分の記録より）</div>
+        ${yohakuBar}
+        <div style="font-size:11px;color:#a08878;">余白なし ←　　　　→ 余白あり</div>
+        ${diversityMsg}
+      </div>`;
+
       html = header("🔍 記録から見えたこと","home") +
         `<div class="page">
           ${periodTabs}
@@ -1747,6 +1996,7 @@ function render() {
               見つけるための時間にしてね。
             </div>
           </div>
+          ${yohakuCard}
           ${cards}
           ${shuffleBtn}
           <div class="ai-footer-note">
