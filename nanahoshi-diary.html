@@ -1196,7 +1196,7 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
       if (highest[0] !== lowest[0] && (highest[1]-lowest[1]) >= 0.8) {
         findings.push({
           body: `${dayNames[highest[0]]}曜日は元気な日が多く、${dayNames[lowest[0]]}曜日はエネルギーが低めな傾向がありました。`,
-          insight: "曜日によってエネルギーのリズムが違うのは自然なことです。${dayNames[lowest[0]]}曜日の前後は、少し余裕を持てるといいかもしれません。"
+          insight: `曜日によってエネルギーのリズムが違うのは自然なことです。${dayNames[lowest[0]]}曜日の前後は、少し余裕を持てるといいかもしれません。`
         });
       }
     }
