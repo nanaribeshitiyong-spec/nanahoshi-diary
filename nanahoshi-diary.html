@@ -1472,6 +1472,111 @@ function checkMealDiversity(meals) {
   return { hitGroups, count: hitGroups.length, total: Object.keys(groups).length };
 }
 
+function generateAdvice(yohaku, entries, meals) {
+  const today = todayJST();
+  const cutoff = new Date(today+"T00:00:00+09:00");
+  cutoff.setDate(cutoff.getDate()-6);
+  const cutoffStr = cutoff.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+  const recent = entries.filter(e => e.date >= cutoffStr);
+  if (recent.length === 0) return null;
+
+  const allMemo = recent.map(e=>e.memo||"").join(" ");
+  const checks = recent.map(e=>e.checks||{});
+  const avgEnergy = recent.reduce((s,e)=>s+e.energy,0)/recent.length;
+
+  // 記録から傾向を拾う
+  const sleepBad = checks.filter(c=>c.sleep_lack||c.sleep_rhythm).length >= 2;
+  const manySnacks = recent.filter(e=>meals[e.date]?.snack?.trim()).length >= 3;
+  const childTired = checks.filter(c=>c.child).length >= 2;
+  const partnerTired = checks.filter(c=>c.partner).length >= 1;
+  const workTired = checks.filter(c=>c.work).length >= 2;
+  const noAlone = checks.filter(c=>c.alone).length === 0;
+  const hasRelax = textHasAny(allMemo, ["お風呂","銭湯","散歩","のんびり","ゆっくりできた"]);
+  const diversity = checkMealDiversity(meals);
+
+  if (yohaku.level === "low") {
+    // 余白なし→頑張りを認める＋今できる最小のこと
+    const lowAdvices = [];
+    if (sleepBad) lowAdvices.push({
+      emoji:"🌙",
+      body:"睡眠が崩れてる日が続いてるね。",
+      hint:"今夜だけでいいから、寝る直前のスマホをちょっとだけ早めに置いてみて。"
+    });
+    if (manySnacks) lowAdvices.push({
+      emoji:"🍫",
+      body:"間食が増えてる日が多かったみたい。",
+      hint:"お腹が空く前に何か小さく食べておくと、間食が少し落ち着くことがあるよ。"
+    });
+    if (noAlone) lowAdvices.push({
+      emoji:"🌿",
+      body:"一人の時間がほとんど取れてない週だったね。",
+      hint:"トイレの3分でもいい。一人でいる時間を意識的に作ってみて。"
+    });
+    // デフォルト
+    lowAdvices.push({
+      emoji:"💧",
+      body:"毎日必死に回してるのが記録から伝わってくる。",
+      hint:"今日だけでいいから、水を少し多めに飲んでみて。それだけでいい。"
+    });
+    return { level:"low", advice: lowAdvices[0] };
+  }
+
+  if (yohaku.level === "mid") {
+    // ぎりぎり→少し具体的なヒント
+    const midAdvices = [];
+    if (sleepBad) midAdvices.push({
+      emoji:"🌙",
+      body:"睡眠が不安定な日が続いてるみたい。",
+      hint:"寝る時間より「起きる時間」を一定にするだけで、リズムが整いやすくなるよ。"
+    });
+    if (!hasRelax) midAdvices.push({
+      emoji:"🛁",
+      body:"この1週間、休息らしい休息が記録に見えなかったよ。",
+      hint:"お風呂にゆっくり入るとか、10分だけ横になるとか、小さな回復時間を作ってみて。"
+    });
+    if (diversity && diversity.count < 3) midAdvices.push({
+      emoji:"🥄",
+      body:"食事のバリエーションが少なめの週だったみたい。",
+      hint:"主食・たんぱく質・野菜の3つを意識するだけで、だいぶ変わってくるよ。無理しない範囲でね。"
+    });
+    midAdvices.push({
+      emoji:"🌿",
+      body:"ぎりぎり回してる週だったね。それだけで十分すごい。",
+      hint:"何か一つ、今週できたことを思い出してみて。小さくてもいいよ。"
+    });
+    return { level:"mid", advice: midAdvices[0] };
+  }
+
+  // 余白あり→ちゃんとしたアドバイス
+  const highAdvices = [];
+  if (sleepBad) highAdvices.push({
+    emoji:"🌙",
+    body:"余裕がある今週だからこそ、睡眠を整えるチャンスかも。",
+    hint:"就寝時間を30分早めてみるとか、寝る前の習慣を一つ決めてみるのがおすすめ。"
+  });
+  if (diversity && diversity.count < 4) {
+    const missing = ["grain","protein","veggie","fermented","soup"]
+      .filter(g=>!diversity.hitGroups.includes(g))
+      .map(g=>({"grain":"主食","protein":"たんぱく質（肉・魚・卵）","veggie":"野菜","fermented":"発酵食品（納豆・味噌）","soup":"汁物"})[g]);
+    if (missing.length > 0) highAdvices.push({
+      emoji:"🍱",
+      body:`今週足りなかったのは「${missing.slice(0,2).join("」「")}」みたい。`,
+      hint:"1日1食だけでもいいから、意識して取り入れてみて。5品目がそろうと身体が喜ぶよ。"
+    });
+  }
+  if (noAlone) highAdvices.push({
+    emoji:"🌸",
+    body:"余裕はあるけど、一人時間が取れてない週だったね。",
+    hint:"意識的に自分だけの時間を作ってみて。30分でも変わるよ。"
+  });
+  highAdvices.push({
+    emoji:"✨",
+    body:"余裕がある今週、自分への投資ができるタイミングかも。",
+    hint:"睡眠・食事・休息のどれか一つ、今週少し丁寧にやってみてね。"
+  });
+  return { level:"high", advice: highAdvices[0] };
+}
+
 function generateGardenMessage(todayEntry, entries=[], meals={}) {
   // 余白ひとこと（最後に添える）
   const yohaku = calcYohakuScore(entries, meals);
@@ -1919,25 +2024,23 @@ function render() {
     // 余白カードは全状態で共通表示
     const yohakuAi = calcYohakuScore(entries, meals);
     const diversityAi = checkMealDiversity(meals);
+    const adviceAi = generateAdvice(yohakuAi, entries, meals);
     const yohakuBarAi = `<div style="width:100%;height:8px;background:#eeddd0;border-radius:5px;overflow:hidden;margin:8px 0 4px;">
       <div style="width:${Math.round(yohakuAi.score*10)}%;height:100%;background:${yohakuAi.level==='high'?'#8eb8e8':yohakuAi.level==='mid'?'#a99ee8':'#e0b8d8'};border-radius:5px;"></div>
     </div>`;
-    const diversityMsgAi = (() => {
-      if (!diversityAi || diversityAi.count === 0) return "";
-      if (yohakuAi.level === "low") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">今週は余白が少なかったね。食事のことは後回しでOK。まず自分を休ませることが先。</div>`;
-      if (yohakuAi.level === "mid") return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">ぎりぎり回している週。食事は「品数より継続」でいいよ。食べられていることが大事。</div>`;
-      const missing = ["grain","protein","veggie","fermented","soup"]
-        .filter(g => !diversityAi.hitGroups.includes(g))
-        .map(g => ({"grain":"主食","protein":"たんぱく質","veggie":"野菜","fermented":"発酵食品","soup":"汁物"})[g]);
-      if (missing.length === 0) return `<div style="font-size:12px;color:#5a9a6a;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">🌸 今週は食事のバリエーションが豊富だったよ。</div>`;
-      return `<div style="font-size:12px;color:#a08878;line-height:1.8;margin-top:10px;padding-top:10px;border-top:1px dashed #eeddd0;">余裕がある今週、もし気が向いたら「${missing.slice(0,2).join("」「")}」をちょっと意識してみてもいいかも。</div>`;
-    })();
+    const adviceHtml = adviceAi ? `
+      <div style="margin-top:12px;padding-top:12px;border-top:1px dashed #eeddd0;">
+        <div style="font-size:12px;font-weight:700;color:#6a5040;margin-bottom:6px;">${adviceAi.advice.emoji} ${adviceAi.advice.body}</div>
+        <div style="font-size:12px;color:#a08878;line-height:1.8;background:${yohakuAi.level==='high'?'#f0f6ff':yohakuAi.level==='mid'?'#f5f0ff':'#fff5f0'};padding:10px 12px;border-radius:10px;">
+          ${adviceAi.advice.hint}
+        </div>
+      </div>` : "";
     const yohakuCardAi = `<div class="ai-finding-card" style="border-color:${yohakuAi.level==='high'?'#c9def5':yohakuAi.level==='mid'?'#c9bdf0':'#e8c0d8'};">
       <div class="ai-finding-num">${yohakuAi.emoji} 今週の余白レポート</div>
       <div class="ai-finding-body">${yohakuAi.label}（直近${yohakuAi.days}日分の記録より）</div>
       ${yohakuBarAi}
       <div style="font-size:11px;color:#a08878;">余白なし ←　　　　→ 余白あり</div>
-      ${diversityMsgAi}
+      ${adviceHtml}
     </div>`;
 
     if (!analysis.ready) {
