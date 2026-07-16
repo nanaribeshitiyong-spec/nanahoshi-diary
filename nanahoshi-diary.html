@@ -1354,28 +1354,41 @@ function printMeals() {
     dates.push(cur.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}));
     cur.setDate(cur.getDate()+1);
   }
-  const rows = dates.map(d => {
-    const m = S.meals[d] || {};
-    const cells = MEAL_SLOTS.map(slot => `<td>${(m[slot.id]||"").replace(/\n/g,"<br>")||"<span class='pm-empty'>―</span>"}</td>`).join("");
-    return `<tr><td class="pm-date">${fmtDate(d)}</td>${cells}</tr>`;
+  // 転置レイアウト：日付が列（横）、食事スロットが行（縦）
+  const dateHeadCells = dates.map(d => {
+    const dt = new Date(d+"T00:00:00+09:00");
+    const dayNames = ["日","月","火","水","木","金","土"];
+    return `<th class="pm-datehead">${dt.getMonth()+1}/${dt.getDate()}<br><span class="pm-dow">(${dayNames[dt.getDay()]})</span></th>`;
   }).join("");
-  const headCells = MEAL_SLOTS.map(s=>`<th>${s.emoji} ${s.label}</th>`).join("");
+  const slotRows = MEAL_SLOTS.map(slot => {
+    const cells = dates.map(d => {
+      const m = S.meals[d] || {};
+      return `<td>${(m[slot.id]||"").replace(/\n/g,"<br>")||"<span class='pm-empty'>―</span>"}</td>`;
+    }).join("");
+    return `<tr><td class="pm-slot">${slot.emoji}<br>${slot.label}</td>${cells}</tr>`;
+  }).join("");
   const printHtml = `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
     <title>食事記録 ${fmtDate(from)} 〜 ${fmtDate(to)}</title>
     <style>
       body { font-family:'Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif; color:#3d2b1f; padding:24px; margin:0; }
       h1 { font-size:18px; margin-bottom:4px; }
       .pm-sub { font-size:11px; color:#a08878; margin-bottom:18px; }
-      table { width:100%; border-collapse:collapse; font-size:11px; }
-      th, td { border:1px solid #ddd; padding:7px 8px; text-align:left; vertical-align:top; }
-      th { background:#f3f0ff; font-weight:700; }
-      .pm-date { white-space:nowrap; font-weight:700; background:#fdf6ee; }
+      table { width:100%; border-collapse:collapse; font-size:10px; table-layout:fixed; }
+      th, td { border:1px solid #ccc; padding:6px 5px; text-align:left; vertical-align:top; word-break:break-word; }
+      th { background:#f3f0ff; font-weight:700; text-align:center; }
+      .pm-datehead { font-size:11px; }
+      .pm-dow { font-size:9px; color:#a08878; font-weight:400; }
+      .pm-slot { white-space:nowrap; font-weight:700; background:#fdf6ee; text-align:center; width:64px; font-size:10px; }
       .pm-empty { color:#ccc; }
+      @media print { body { padding: 10mm; } }
     </style></head>
     <body>
       <h1>🍙 ${getAppTitle()} 食事記録</h1>
       <div class="pm-sub">${fmtDate(from)} 〜 ${fmtDate(to)}</div>
-      <table><thead><tr><th>日付</th>${headCells}</tr></thead><tbody>${rows}</tbody></table>
+      <table>
+        <thead><tr><th class="pm-slot"></th>${dateHeadCells}</tr></thead>
+        <tbody>${slotRows}</tbody>
+      </table>
     </body></html>`;
 
   // iOS Safari はポップアップウィンドウの印刷ダイアログ起動がブロックされやすいため、
