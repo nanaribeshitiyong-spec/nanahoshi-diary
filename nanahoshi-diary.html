@@ -338,10 +338,28 @@
     padding: 7px 14px; font-size: 12px; color: #6a5fc8; font-weight: 700;
     cursor: pointer; font-family: inherit;
   }
+  @media print { #site-footer { display: none; } }
 </style>
 </head>
 <body>
 <div id="app"></div>
+<footer id="site-footer" style="max-width:520px; margin:20px auto 32px; padding:0 16px;">
+  <div style="background:#fff; border:1.5px solid #eeddd0; border-radius:16px; padding:18px 16px; text-align:center;">
+    <div style="font-size:14px; font-weight:700; color:#3d2b1f; margin-bottom:6px;">
+      💪 一緒に減量頑張ろう!
+    </div>
+    <div style="font-size:12px; color:#a08878; line-height:1.6; margin-bottom:12px;">
+      減量日記、noteで毎日更新中🔥<br>
+      「ダイエットは環境から」の話も熱く語ってます
+    </div>
+    <a href="https://note.com/vast_rose2382" target="_blank" rel="noopener"
+       style="display:inline-block; background:#6a5fc8; color:#fff; font-size:13px;
+              font-weight:700; text-decoration:none; border-radius:99px;
+              padding:10px 24px;">
+      📖 減量日記を読みにいく →
+    </a>
+  </div>
+</footer>
 <script>
 const STORAGE_KEY = "nanahoshi_diary_v2";
 const NAME_KEY = "nanahoshi_diary_name_v1";
@@ -1823,6 +1841,27 @@ function render() {
             <div class="settings-value">${appTitle}</div>
           </div>
           <button class="settings-btn" onclick="set({view:'nameEdit',nameInput:'${currentName}'})">変更する</button>
+        </div>
+        <div style="background:#fff; border:1.5px solid #eeddd0; border-radius:14px; padding:16px; margin-top:14px;">
+          <div class="settings-label" style="margin-bottom:10px;">📖 このアプリについて</div>
+          <div style="font-size:12px; color:#5a4a3d; line-height:1.8;">
+            <div style="margin-bottom:10px;">
+              <b>🔒 データの保存場所</b><br>
+              記録はすべて<b>この端末の中だけ</b>に保存されます。どこにも送信されないので安心してね。ただし、ブラウザの履歴・サイトデータを消すと<b>記録も一緒に消えます</b>。大事な記録はこまめに残しておこう!
+            </div>
+            <div style="margin-bottom:10px;">
+              <b>🖨️ 記録の残し方</b><br>
+              印刷できるのは<b>食事記録だけ</b>です。エネルギー日記やメモを残したい人は<b>スクショ推奨</b>📱
+            </div>
+            <div style="margin-bottom:10px;">
+              <b>💡 このダイアリーの役割</b><br>
+              これは「書けば痩せるツール」ではありません。痩せるのは食事と運動、摂取と消費のカロリーバランス!このアプリの役割は<b>記録して、自分の状態を見える化する</b>こと。週1チェックは「そのくらいゆるくてOK」の意味やから、毎日書けなくても自分を責めないでね。
+            </div>
+            <div>
+              <b>💬 不具合・お問い合わせ</b><br>
+              <a href="https://note.com/vast_rose2382" target="_blank" rel="noopener" style="color:#6a5fc8; font-weight:700;">ななほし⭐︎のnote</a>のコメント欄までどうぞ
+            </div>
+          </div>
         </div>
       </div>`;
   }
