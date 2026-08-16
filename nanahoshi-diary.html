@@ -350,7 +350,7 @@
     </div>
     <div style="font-size:12px; color:#a08878; line-height:1.6; margin-bottom:12px;">
       減量日記、noteで毎日更新中🔥<br>
-      「ダイエットは環境から」の話も熱く語ってます
+      「ダイエットは余白から」の話も熱く語ってます
     </div>
     <a href="https://note.com/vast_rose2382" target="_blank" rel="noopener"
        style="display:inline-block; background:#6a5fc8; color:#fff; font-size:13px;
@@ -363,6 +363,17 @@
 <script>
 const STORAGE_KEY = "nanahoshi_diary_v2";
 const NAME_KEY = "nanahoshi_diary_name_v1";
+const STYLE_KEY = "nanahoshi_write_style";
+function loadWriteStyle() { try { return localStorage.getItem(STYLE_KEY) || "night"; } catch { return "night"; } }
+function saveWriteStyle(v) { try { localStorage.setItem(STYLE_KEY, v); } catch {} }
+// 記録スタイルに応じたデフォルト日付（朝モードなら昨日）
+function defaultWriteDate() {
+  if (loadWriteStyle() !== "morning") return todayJST();
+  const d = new Date(todayJST()+"T00:00:00+09:00");
+  d.setDate(d.getDate()-1);
+  return d.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"});
+}
+
 function loadName() { try { return localStorage.getItem(NAME_KEY) || null; } catch { return null; } }
 function saveName(n) { try { localStorage.setItem(NAME_KEY, n); } catch {} }
 function getAppTitle() {
@@ -381,6 +392,7 @@ const CHECKS = [
   { id:"sleep_lack",  label:"睡眠不足",           cat:"😴 睡眠" },
   { id:"sleep_nap",   label:"仮眠ぎみ",           cat:"😴 睡眠" },
   { id:"sleep_rhythm",label:"睡眠リズム不調",      cat:"😴 睡眠" },
+  { id:"sleep_sleepy", label:"日中ずっと眠かった",   cat:"😴 睡眠" },
   { id:"meal",        label:"ちゃんと食べた",      cat:"その他" },
   { id:"alone",       label:"一人の時間があった",   cat:"その他" },
   { id:"child",       label:"子どものことで消耗した",cat:"その他" },
@@ -609,18 +621,29 @@ function gardenStats(entries) {
   });
   // 育成段階: 記録日数で決まる（責めない・減らない指標）
   const stages = [
-    { min:0,  emoji:"🌱", label:"芽が出たばかり" },
-    { min:3,  emoji:"🌿", label:"双葉" },
-    { min:7,  emoji:"🪴", label:"若木" },
-    { min:14, emoji:"🌳", label:"育ってきた木" },
-    { min:30, emoji:"🌳", label:"立派な木" },
+    { min:0,   emoji:"🌱", label:"芽が出たばかり" },
+    { min:3,   emoji:"🌿", label:"双葉" },
+    { min:7,   emoji:"🪴", label:"若木" },
+    { min:14,  emoji:"🌳", label:"育ってきた木" },
+    { min:30,  emoji:"🌳", label:"立派な木" },
+    { min:50,  emoji:"🌳", label:"大きな木" },
+    { min:75,  emoji:"🌲", label:"堂々とした木" },
+    { min:100, emoji:"🌲", label:"森になりはじめた" },
+    { min:150, emoji:"🏞️", label:"小さな森" },
+    { min:200, emoji:"🏞️", label:"豊かな森" },
+    { min:300, emoji:"🌏", label:"どこまでも広がる庭" },
   ];
   let stageIdx = 0;
   stages.forEach((s,i) => { if (totalDays >= s.min) stageIdx = i; });
   const stage = stages[stageIdx];
-  const nextStage = stages[stageIdx+1];
+  // 最終段階に到達したあとも 100日ごとに「〇周目」として伸び続ける
+  const isMaxStage = stageIdx === stages.length - 1;
+  const lap = isMaxStage ? Math.floor((totalDays - stages[stageIdx].min) / 100) : 0;
+  const nextStage = isMaxStage
+    ? { min: stages[stageIdx].min + (lap+1)*100, emoji: stage.emoji, label: `庭が育ち続けてる（${lap+2}周目）` }
+    : stages[stageIdx+1];
   const progress = nextStage
-    ? Math.min(100, Math.round(((totalDays - stage.min) / (nextStage.min - stage.min)) * 100))
+    ? Math.min(100, Math.round(((totalDays - (isMaxStage ? stages[stageIdx].min + lap*100 : stage.min)) / (nextStage.min - (isMaxStage ? stages[stageIdx].min + lap*100 : stage.min))) * 100))
     : 100;
 
   // 雰囲気: 直近のエネルギー平均で決定
@@ -706,7 +729,7 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
     return null;
   })();
   const filteredEntries = cutoff ? entries.filter(e => e.date >= cutoff) : entries;
-  filteredEntries.forEach(e => { byDate[e.date] = { energy:e.energy, checks:e.checks||{}, memo:e.memo||"" }; });
+  filteredEntries.forEach(e => { byDate[e.date] = { energy:e.energy, energyAM:e.energyAM ?? null, energyPM:e.energyPM ?? null, checks:e.checks||{}, memo:e.memo||"" }; });
   const dates = Object.keys(byDate).sort();
   if (dates.length < 3) return { ready:false, have:dates.length };
   const periodLabel = `${fmtDate(dates[0])}〜${fmtDate(dates[dates.length-1])}`;
@@ -741,6 +764,89 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
     recovery: ["回復","よくなった","元気になった","スッキリした","楽になった","立ち直","気分良くなった"],
   };
 
+  // ===== 朝夜のエネルギー分析 =====
+  const bothDays = dates.filter(d => byDate[d].energyAM != null && byDate[d].energyPM != null);
+  if (bothDays.length >= 3) {
+    const diffs = bothDays.map(d => byDate[d].energyPM - byDate[d].energyAM);
+    const avgDiff = diffs.reduce((a,b)=>a+b,0) / diffs.length;
+    const downDays = diffs.filter(x => x < 0).length;
+    const upDays = diffs.filter(x => x > 0).length;
+    const flatDays = diffs.filter(x => x === 0).length;
+    const avgAM = bothDays.reduce((s2,d)=>s2+byDate[d].energyAM,0)/bothDays.length;
+    const avgPM = bothDays.reduce((s2,d)=>s2+byDate[d].energyPM,0)/bothDays.length;
+
+    if (avgDiff <= -0.7) {
+      findings.push({
+        body: `朝と夜を両方記録した${bothDays.length}日のうち、${downDays}日は夜のほうがエネルギーが下がっていました。（朝の平均 ${avgAM.toFixed(1)} → 夜の平均 ${avgPM.toFixed(1)}）`,
+        insight: "1日のなかで消耗していくタイプなのかもしれません。（朝型・夜型といった体内時計の個人差は、生まれつきの要素が大きいとも言われています）"
+      });
+    } else if (avgDiff >= 0.7) {
+      findings.push({
+        body: `朝と夜を両方記録した${bothDays.length}日のうち、${upDays}日は夜のほうがエネルギーが上がっていました。（朝の平均 ${avgAM.toFixed(1)} → 夜の平均 ${avgPM.toFixed(1)}）`,
+        insight: "朝がしんどくて、動き出してから調子が出るタイプなのかもしれません。（朝型・夜型といった体内時計の個人差は、生まれつきの要素が大きいとも言われています）"
+      });
+    } else if (flatDays >= bothDays.length * 0.6) {
+      findings.push({
+        body: `朝と夜のエネルギーが同じだった日が${flatDays}日ありました。1日を通して大きく変動していないようです。`,
+        insight: "波が小さいのは、リズムが安定しているサインかもしれません。"
+      });
+    } else {
+      findings.push({
+        body: `朝の平均は${avgAM.toFixed(1)}、夜の平均は${avgPM.toFixed(1)}でした。上がる日も下がる日もあるようです。（上がった日 ${upDays}日 / 下がった日 ${downDays}日）`,
+        insight: "日によって変動があるようです。上がった日と下がった日で何が違ったか、メモを見返すと見えてくるかもしれません。"
+      });
+    }
+
+    // 落差が特に大きい日
+    const bigDrop = bothDays.filter(d => (byDate[d].energyPM - byDate[d].energyAM) <= -2);
+    if (bigDrop.length >= 1) {
+      const workDrop = bigDrop.filter(d => byDate[d].checks.work || byDate[d].checks.task).length;
+      findings.push({
+        body: `朝から夜にかけて大きく落ち込んだ日が${bigDrop.length}日ありました。${workDrop >= 1 ? `そのうち${workDrop}日は「仕事がきつかった」「やること多すぎた」が入っていました。` : ""}`,
+        insight: "落差が大きかった日のメモを見返してみると、何か共通点があるかもしれません。"
+      });
+    }
+  }
+
+  // ===== 曜日別のエネルギー =====
+  if (N >= 7) {
+    const dowNames = ["日","月","火","水","木","金","土"];
+    const dowAM = [[],[],[],[],[],[],[]];
+    const dowPM = [[],[],[],[],[],[],[]];
+    const dowAll = [[],[],[],[],[],[],[]];
+    dates.forEach(d => {
+      const dow = new Date(d+"T00:00:00+09:00").getDay();
+      if (byDate[d].energyAM != null) dowAM[dow].push(byDate[d].energyAM);
+      if (byDate[d].energyPM != null) dowPM[dow].push(byDate[d].energyPM);
+      dowAll[dow].push(byDate[d].energy);
+    });
+    const avgOf = arr => arr.length ? arr.reduce((a,b)=>a+b,0)/arr.length : null;
+    const dowAvg = dowAll.map(avgOf);
+    const valid = dowAvg.map((v,i)=>({v,i})).filter(x => x.v != null && dowAll[x.i].length >= 2);
+    if (valid.length >= 3) {
+      const low = valid.reduce((a,b)=> b.v < a.v ? b : a);
+      const high = valid.reduce((a,b)=> b.v > a.v ? b : a);
+      if (high.v - low.v >= 0.8) {
+        findings.push({
+          body: `曜日でみると、${dowNames[low.i]}曜日が一番エネルギーが低め（平均${low.v.toFixed(1)}）、${dowNames[high.i]}曜日が一番高め（平均${high.v.toFixed(1)}）でした。`,
+          insight: `同じ曜日でも毎週同じとは限りませんが、記録が増えるとはっきりしてくるかもしれません。`
+        });
+      }
+    }
+    // 朝だけ・夜だけの曜日傾向
+    const dowAMAvg = dowAM.map(avgOf);
+    const validAM = dowAMAvg.map((v,i)=>({v,i})).filter(x => x.v != null && dowAM[x.i].length >= 2);
+    if (validAM.length >= 3) {
+      const lowAM = validAM.reduce((a,b)=> b.v < a.v ? b : a);
+      if (lowAM.v <= 1.5) {
+        findings.push({
+          body: `${dowNames[lowAM.i]}曜日の朝は、エネルギーが低めの日が多いようです（平均${lowAM.v.toFixed(1)}）。`,
+          insight: "前日の記録と並べて見ると、何か見えてくるかもしれません。"
+        });
+      }
+    }
+  }
+
   // 眠い系メモ×食事・エネルギー
   const sleepyMemoDays = dates.filter(d => textHasAny(byDate[d].memo||"", memoKeywords.sleepy));
   if (sleepyMemoDays.length >= 1) {
@@ -749,7 +855,7 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
     if (sleepySnack >= 1) {
       findings.push({
         body: `「眠い」と感じた日は、間食が増える傾向がありました。`,
-        insight: "眠気を感じるとき、身体が手っ取り早いエネルギーを求めていることがあるようです。"
+        insight: "睡眠が足りないと食欲を増やすホルモンが増える、という話もあります。意志の問題というより、身体の反応なのかもしれません。"
       });
     } else if (sleepyAvgEnergy <= 1.5) {
       findings.push({
@@ -1309,7 +1415,7 @@ function buildAiAnalysis(entries, meals, period="week", seed=0) {
 
 
 // editingId: 編集対象のエントリID（null=新規）
-let S = { view: loadName() ? "home" : "setup", entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null, nameInput:"", aiPeriod:"week", aiSeed:Date.now() };
+let S = { view: loadName() ? "home" : "setup", energyAM:null, energyPM:null, entries:load(), selected:null, energy:2, checks:{}, memo:"", saved:false, confirming:false, editingId:null, wateredDate:loadWaterDate(), watering:false, waterMessage:loadWaterMessage(), showWaterMessage:false, meals:loadMeals(), mealDate:todayJST(), mealDraft:{}, mealSaved:false, printFrom:null, printTo:null, nameInput:"", aiPeriod:"week", aiSeed:Date.now() };
 
 function set(patch) { Object.assign(S,patch); render(); }
 
@@ -1361,7 +1467,7 @@ function saveMealEntry() {
   setTimeout(()=>set({ mealSaved:false }), 1200);
 }
 
-function printMeals() {
+async function printMeals() {
   const from = S.printFrom, to = S.printTo;
   if (!from || !to || from > to) { alert("開始日と終了日を確認してね"); return; }
   // 範囲内の日付を列挙
@@ -1372,6 +1478,18 @@ function printMeals() {
     dates.push(cur.toLocaleDateString("sv-SE",{timeZone:"Asia/Tokyo"}));
     cur.setDate(cur.getDate()+1);
   }
+  // 印刷用に画像をまとめて読み込む
+  const imgMap = {};
+  for (const d of dates) {
+    for (const slot of MEAL_SLOTS) {
+      const key = `${d}_${slot.id}`;
+      try {
+        const dataUrl = await loadImg(key);
+        if (dataUrl) imgMap[key] = dataUrl;
+      } catch (e) { /* 画像がなければ無視 */ }
+    }
+  }
+
   // 転置レイアウト：日付が列（横）、食事スロットが行（縦）
   const dateHeadCells = dates.map(d => {
     const dt = new Date(d+"T00:00:00+09:00");
@@ -1381,7 +1499,11 @@ function printMeals() {
   const slotRows = MEAL_SLOTS.map(slot => {
     const cells = dates.map(d => {
       const m = S.meals[d] || {};
-      return `<td>${(m[slot.id]||"").replace(/\n/g,"<br>")||"<span class='pm-empty'>―</span>"}</td>`;
+      const txt = (m[slot.id]||"").replace(/\n/g,"<br>");
+      const img = imgMap[`${d}_${slot.id}`];
+      const imgTag = img ? `<img class="pm-photo" src="${img}"/>` : "";
+      const body = (txt || imgTag) ? `${imgTag}${txt}` : "<span class='pm-empty'>―</span>";
+      return `<td>${body}</td>`;
     }).join("");
     return `<tr><td class="pm-slot">${slot.emoji}<br>${slot.label}</td>${cells}</tr>`;
   }).join("");
@@ -1398,6 +1520,8 @@ function printMeals() {
       .pm-dow { font-size:9px; color:#a08878; font-weight:400; }
       .pm-slot { white-space:nowrap; font-weight:700; background:#fdf6ee; text-align:center; width:64px; font-size:10px; }
       .pm-empty { color:#ccc; }
+      .pm-photo { width:100%; max-height:70px; object-fit:cover; border-radius:3px; margin-bottom:3px; display:block; }
+      @media print { .pm-photo { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
       @media print { body { padding: 10mm; } }
     </style></head>
     <body>
@@ -1743,9 +1867,12 @@ function refreshGardenMessageIfToday(updatedEntry) {
 
 // 既存エントリを編集モードで write 画面へ
 function openEdit(entry) {
+  const am = entry.energyAM ?? null;
+  const pm = entry.energyPM ?? (entry.energyAM == null ? (entry.energy ?? null) : null);
   set({
     view: "write",
-    energy: entry.energy,
+    energyAM: am,
+    energyPM: pm,
     checks: { ...entry.checks },
     memo: entry.memo || "",
     saved: false,
@@ -1831,6 +1958,61 @@ function render() {
     </div>`;
   }
 
+  if (view === "refs") {
+    const card = (title, body, links) => `<div class="card">
+      <div class="card-title">${title}</div>
+      <div style="font-size:12px;color:#5a4a3d;line-height:1.85;">${body}</div>
+      ${links ? `<div style="font-size:11px;color:#a08878;margin-top:10px;line-height:1.8;">${links}</div>` : ""}
+    </div>`;
+
+    html = header("📚 参考にした情報","settings") +
+      `<div class="page">
+        <div style="background:#fff;border:1.5px solid #eeddd0;border-radius:14px;padding:16px;">
+          <div style="font-size:12px;color:#5a4a3d;line-height:1.85;">
+            このアプリの「記録から見えたこと」は、下のような一般的に知られている話をゆるく下敷きにしています。
+            <br><br>
+            ただし、<b>ここに書いてあるのは一般論であって、あなたの診断ではありません。</b>
+            気になる症状があるときは、お医者さんに相談してくださいね。
+            <br><br>
+            なお、内容は個人が調べた範囲でまとめたものです。正確な情報は各分野の専門機関の発表をご確認ください。
+          </div>
+        </div>
+
+        ${card("😴 睡眠不足と食欲",
+          `睡眠が足りないと、食欲を増やすホルモン（グレリン）が増え、食欲を抑えるホルモン（レプチン）が減ると言われています。ある実験では、2日間4時間睡眠にしたところ、グレリンが約28%増え、レプチンが約18%減り、空腹感や食欲も20%以上増えたと報告されています。特に甘いものへの食欲が強く出たそうです。
+          <br><br>
+          「寝不足の日にお菓子に手が伸びる」のは、意志の問題というより身体の反応かもしれません。`,
+          "※ 睡眠と食欲に関する一般的な解説をもとにしています（複数の医療機関・産業保健サイトを参照）")}
+
+        ${card("😣 ストレスと食べたくなる気持ち",
+          `ストレスがかかると、コルチゾールというホルモンが増えます。これには食欲を増やす働きがあり、特に脂っこいものや甘いものが欲しくなると言われています。
+          <br><br>
+          この「感情で食べてしまう」状態は、エモーショナル・イーティングと呼ばれることもあります。`,
+          "※ ストレスと食行動に関する一般的な解説をもとにしています（報道記事・医療機関サイトを参照）")}
+
+        ${card("☀️🌙 朝と夜のエネルギーの差",
+          `人には「クロノタイプ」という体内時計の個人差があり、朝に調子が出る人、夜に調子が出る人、その中間の人がいます。日本人を対象にした調査では、中間型が約4割、朝型と夜型がそれぞれ約3割だったそうです。
+          <br><br>
+          このタイプは生まれつきの要素が大きく、努力で変えるのは難しいとも言われています。朝がしんどいのは、根性の問題ではないのかもしれません。`,
+          "※ クロノタイプに関する一般的な解説をもとにしています（大学の研究紹介・企業の調査を参照）")}
+
+        ${card("📝 記録することそのものの効果",
+          `食べたものや体重を記録することは「セルフモニタリング」と呼ばれ、減量の場面でも使われてきた方法です。普段は意識できていない自分の行動が、記録から見えるようになるのが役割だと言われています。
+          <br><br>
+          このアプリも同じで、<b>書けば痩せるわけではありません。</b>自分の状態が見えるようになる、それだけです。`,
+          "※ セルフモニタリングに関する一般的な解説をもとにしています（医療機関サイトを参照）")}
+
+        <div style="background:#fff;border:1.5px solid #eeddd0;border-radius:14px;padding:16px;">
+          <div style="font-size:11px;color:#a08878;line-height:1.85;">
+            ※ このアプリの分析は、あなたが書いた記録の中の数字とキーワードを並べているだけのものです。
+            医学的な診断や治療の代わりにはなりません。
+            <br><br>
+            ※ 情報は執筆時点のものです。内容が更新されている可能性があります。
+          </div>
+        </div>
+      </div>`;
+  }
+
   if (view === "settings") {
     const currentName = loadName() || "なな";
     html = header("⚙️ 設定","home") +
@@ -1841,6 +2023,21 @@ function render() {
             <div class="settings-value">${appTitle}</div>
           </div>
           <button class="settings-btn" onclick="set({view:'nameEdit',nameInput:'${currentName}'})">変更する</button>
+        </div>
+        <div style="background:#fff; border:1.5px solid #eeddd0; border-radius:14px; padding:16px; margin-top:14px;">
+          <div class="settings-label" style="margin-bottom:4px;">✏️ 記録スタイル</div>
+          <div style="font-size:11px; color:#a08878; line-height:1.6; margin-bottom:12px;">
+            いつ記録することが多いかを選んでね。記録画面を開いたときの日付が変わります。
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="check-btn${loadWriteStyle()==="night"?" on":""}" style="flex:1;justify-content:center;"
+              onclick="changeWriteStyle('night')">🌙 その日の夜に書く</button>
+            <button class="check-btn${loadWriteStyle()==="morning"?" on":""}" style="flex:1;justify-content:center;"
+              onclick="changeWriteStyle('morning')">☀️ 次の日の朝に書く</button>
+          </div>
+          <div style="font-size:11px; color:#8a7fd8; margin-top:10px;">
+            ${loadWriteStyle()==="morning" ? "→ 記録画面は「昨日」の日付で開きます" : "→ 記録画面は「今日」の日付で開きます"}
+          </div>
         </div>
         <div style="background:#fff; border:1.5px solid #eeddd0; border-radius:14px; padding:16px; margin-top:14px;">
           <div class="settings-label" style="margin-bottom:10px;">📖 このアプリについて</div>
@@ -1856,6 +2053,13 @@ function render() {
             <div style="margin-bottom:10px;">
               <b>💡 このダイアリーの役割</b><br>
               これは「書けば痩せるツール」ではありません。痩せるのは食事と運動、摂取と消費のカロリーバランス!このアプリの役割は<b>記録して、自分の状態を見える化する</b>こと。週1チェックは「そのくらいゆるくてOK」の意味やから、毎日書けなくても自分を責めないでね。
+            </div>
+            <div style="margin-bottom:10px;">
+              <b>📚 分析のもとになっている考え方</b><br>
+              「記録から見えたこと」で使っている見方の背景を書いています。
+              <div style="margin-top:8px;">
+                <button class="settings-btn" onclick="set({view:'refs'})">参考にした情報をみる</button>
+              </div>
             </div>
             <div>
               <b>💬 不具合・お問い合わせ</b><br>
@@ -1919,7 +2123,7 @@ function render() {
     const settingsBtn = `<button class="btn-secondary" onclick="set({view:'settings'})">⚙️ 設定</button>`;
     html = homeHeader(appTitle) +
       `<div class="page">${banner}
-        <button class="btn-primary" onclick="set({view:'write',energy:2,checks:{},memo:'',saved:false,editingId:null})">✏️ 今日を記録する</button>
+        <button class="btn-primary" onclick="openWriteView()">✏️ 今日を記録する</button>
         ${mealBtn}${gardenBtn}${aiBtn}${settingsBtn}${histBtn}${chart}</div>`;
   }
 
@@ -1927,18 +2131,18 @@ function render() {
     const today = todayJST();
     // 編集中のエントリの日付を特定
     const editingEntry = editingId ? entries.find(e=>e.id===editingId) : null;
-    const targetDate = editingEntry ? editingEntry.date : today;
+    const targetDate = editingEntry ? editingEntry.date : (S.writeDate || defaultWriteDate());
     const isToday = targetDate === today;
     const isEditMode = !!editingId;
 
-    const o = ENERGY[energy];
-    const energyBtns = ENERGY.map((e,i) => {
-      const active = i===energy;
-      return `<button class="energy-btn${active?" active":""}" style="--ec:${e.color}18;--eb:${e.color}" onclick="set({energy:${i}})">
+    const makeEnergyBtns = (slot, cur) => ENERGY.map((e,i) => {
+      const active = i===cur;
+      return `<button class="energy-btn${active?" active":""}" style="--ec:${e.color}18;--eb:${e.color}" onclick="setSlotEnergy('${slot}',${i})">
         <span class="energy-emoji">${e.emoji}</span>
         <span class="energy-label${active?" active":""}" style="${active?`color:${e.color}`:""}">${e.label}</span>
       </button>`;
     }).join("");
+    const amVal = S.energyAM, pmVal = S.energyPM;
     let checkBtns = "";
     let lastCat = null;
     CHECKS.forEach(c => {
@@ -1958,9 +2162,10 @@ function render() {
       pageTitle = `${fmtDate(targetDate)} を編集`;
       btnLabel = saved ? "✅ 更新したよ！" : "この内容で更新する";
     } else {
-      const existingToday = entries.find(e=>e.date===today);
-      pageTitle = existingToday ? "今日の記録を更新" : "今日の記録";
-      btnLabel = saved ? "✅ 記録したよ！" : existingToday ? "更新する" : "この記録を保存する";
+      const existing = entries.find(e=>e.date===targetDate);
+      const dayWord = isToday ? "今日" : fmtDate(targetDate);
+      pageTitle = existing ? `${dayWord}の記録を更新` : `${dayWord}の記録`;
+      btnLabel = saved ? "✅ 記録したよ！" : existing ? "更新する" : "この記録を保存する";
     }
 
     // 編集モードで detail に戻るためのバック処理
@@ -1969,15 +2174,32 @@ function render() {
       : null;
     const backView = isEditMode ? "detail" : "home";
 
+    const dateCard = isEditMode ? "" : `<div class="card">
+          <div class="card-title" style="color:#a08878;">いつの記録？</div>
+          <input type="date" class="print-date-input" style="width:100%;"
+            value="${targetDate}" max="${today}" onchange="changeWriteDate(this.value)"/>
+          ${!isToday ? `<div style="font-size:11px;color:#8a7fd8;margin-top:8px;">📌 ${fmtDate(targetDate)} の記録として保存されます</div>` : ""}
+        </div>`;
+
     html = header(pageTitle, backView, backAction) +
       `<div class="page">
+        ${dateCard}
         <div class="card">
-          <div class="card-title">今のエネルギーは？</div>
-          <div style="display:flex;gap:6px;">${energyBtns}</div>
-          <div class="energy-selected" style="background:${o.color}18;color:${o.color};">${o.emoji} ${o.label}</div>
+          <div class="card-title">☀️ 朝のエネルギー</div>
+          <div style="display:flex;gap:6px;">${makeEnergyBtns("am", amVal)}</div>
+          ${amVal != null
+            ? `<div class="energy-selected" style="background:${ENERGY[amVal].color}18;color:${ENERGY[amVal].color};">${ENERGY[amVal].emoji} ${ENERGY[amVal].label}</div>`
+            : `<div style="font-size:11px;color:#c4b5a5;text-align:center;margin-top:10px;">まだ記録なし（書かなくてもOK）</div>`}
         </div>
         <div class="card">
-          <div class="card-title">今日どうだった？（複数OK）</div>
+          <div class="card-title">🌙 夜のエネルギー</div>
+          <div style="display:flex;gap:6px;">${makeEnergyBtns("pm", pmVal)}</div>
+          ${pmVal != null
+            ? `<div class="energy-selected" style="background:${ENERGY[pmVal].color}18;color:${ENERGY[pmVal].color};">${ENERGY[pmVal].emoji} ${ENERGY[pmVal].label}</div>`
+            : `<div style="font-size:11px;color:#c4b5a5;text-align:center;margin-top:10px;">まだ記録なし（書かなくてもOK）</div>`}
+        </div>
+        <div class="card">
+          <div class="card-title">${isToday ? "今日" : "この日"}どうだった？（複数OK）</div>
           ${checkBtns}
         </div>
         <div class="card">
@@ -2272,6 +2494,14 @@ function render() {
           <div style="font-size:11px;color:#a08878;margin-bottom:5px;">${fmtDate(selected.date)}</div>
           <div style="font-size:38px;margin-bottom:3px;">${o.emoji}</div>
           <div style="font-size:17px;font-weight:700;color:${o.color};">${o.label}</div>
+          ${(() => {
+            const am = selected.energyAM, pm = selected.energyPM;
+            if (am == null && pm == null) return "";
+            const cells = [];
+            if (am != null) cells.push(`<div style="flex:1;"><div style="font-size:10px;color:#a08878;">☀️ 朝</div><div style="font-size:20px;">${ENERGY[am].emoji}</div><div style="font-size:11px;color:${ENERGY[am].color};font-weight:700;">${ENERGY[am].label}</div></div>`);
+            if (pm != null) cells.push(`<div style="flex:1;"><div style="font-size:10px;color:#a08878;">🌙 夜</div><div style="font-size:20px;">${ENERGY[pm].emoji}</div><div style="font-size:11px;color:${ENERGY[pm].color};font-weight:700;">${ENERGY[pm].label}</div></div>`);
+            return `<div style="display:flex;gap:8px;margin-top:14px;padding-top:12px;border-top:1px solid ${o.color}40;">${cells.join("")}</div>`;
+          })()}
         </div>
         <div class="card"><div class="card-title" style="color:#a08878;">その日のチェック</div>${checkRows}</div>
         ${memoHtml}
@@ -2289,6 +2519,45 @@ function toggleCheck(id) {
   render();
 }
 
+function openWriteView() {
+  const d = defaultWriteDate();
+  const existing = S.entries.find(e=>e.date===d);
+  let energyAM = null, energyPM = null, checks = {}, memo = "";
+  if (existing) {
+    // 旧データ（energyのみ）は夜として読み込む
+    energyAM = existing.energyAM ?? null;
+    energyPM = existing.energyPM ?? (existing.energyAM == null ? (existing.energy ?? null) : null);
+    checks = {...(existing.checks||{})};
+    memo = existing.memo || "";
+  }
+  set({ view:"write", writeDate:d, energyAM, energyPM, checks, memo, saved:false, editingId:null });
+}
+
+function setSlotEnergy(slot, v) {
+  if (slot === "am") set({ energyAM: v });
+  else set({ energyPM: v });
+}
+
+function changeWriteStyle(v) {
+  saveWriteStyle(v);
+  set({ writeDate:null });
+}
+
+function changeWriteDate(d) {
+  if (!d) return;
+  const today = todayJST();
+  if (d > today) { alert("未来の日付は選べないよ"); return; }
+  // その日に既存の記録があれば読み込む
+  const existing = S.entries.find(e=>e.date===d);
+  if (existing) {
+    const am = existing.energyAM ?? null;
+    const pm = existing.energyPM ?? (existing.energyAM == null ? (existing.energy ?? null) : null);
+    set({ writeDate:d, energyAM:am, energyPM:pm, checks:{...existing.checks}, memo:existing.memo||"" });
+  } else {
+    set({ writeDate:d, energyAM:null, energyPM:null, checks:{}, memo:"" });
+  }
+}
+
 function saveEntry() {
   const today = todayJST();
   const isEditMode = !!S.editingId;
@@ -2299,12 +2568,17 @@ function saveEntry() {
     targetDate = editingEntry.date;
     targetId = editingEntry.id;
   } else {
-    const existingToday = S.entries.find(e=>e.date===today);
-    targetDate = today;
-    targetId = existingToday?.id ?? Date.now();
+    targetDate = S.writeDate || defaultWriteDate();
+    const existing = S.entries.find(e=>e.date===targetDate);
+    targetId = existing?.id ?? Date.now();
   }
 
-  const entry = { id: targetId, date: targetDate, energy: S.energy, checks: {...S.checks}, memo: S.memo };
+  // 朝夜2枠: どちらか一方だけでもOK。energy は代表値（夜優先）として保持
+  const energyAM = S.energyAM ?? null;
+  const energyPM = S.energyPM ?? null;
+  if (energyAM == null && energyPM == null) { alert("朝か夜、どちらかのエネルギーを選んでね"); return; }
+  const repEnergy = energyPM ?? energyAM;
+  const entry = { id: targetId, date: targetDate, energy: repEnergy, energyAM, energyPM, checks: {...S.checks}, memo: S.memo };
   const filtered = S.entries.filter(e=>e.id!==targetId);
   const next = [entry,...filtered].sort((a,b)=>b.date.localeCompare(a.date));
   save(next);
@@ -2315,10 +2589,10 @@ function saveEntry() {
     // 編集完了後は detail に戻る
     setTimeout(()=>{
       const updated = next.find(e=>e.id===targetId);
-      set({ view:"detail", selected:updated, energy:2, checks:{}, memo:"", saved:false, editingId:null, confirming:false });
+      set({ view:"detail", selected:updated, energyAM:null, energyPM:null, checks:{}, memo:"", saved:false, editingId:null, confirming:false });
     }, 900);
   } else {
-    setTimeout(()=>set({ view:"home", energy:2, checks:{}, memo:"", saved:false, editingId:null }), 900);
+    setTimeout(()=>set({ view:"home", energyAM:null, energyPM:null, checks:{}, memo:"", saved:false, editingId:null, writeDate:null }), 900);
   }
 }
 
