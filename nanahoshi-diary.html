@@ -362,11 +362,49 @@
     }
     @page { margin: 10mm; }
   }
+
+  /* ===== ホーム画面アプリ用：表を画像にして渡す ===== */
+  #print-img-overlay {
+    display:none; position:fixed; inset:0; z-index:9999;
+    background:rgba(61,43,31,0.82); -webkit-backdrop-filter:blur(2px);
+    flex-direction:column; padding:14px;
+  }
+  #print-img-overlay .pio-head {
+    display:flex; align-items:center; justify-content:space-between;
+    color:#fff; font-size:14px; font-weight:700; margin-bottom:10px; flex:0 0 auto;
+  }
+  #print-img-overlay .pio-close {
+    background:rgba(255,255,255,0.22); color:#fff; border:none; border-radius:999px;
+    width:34px; height:34px; font-size:18px; line-height:1; cursor:pointer;
+  }
+  #print-img-overlay .pio-tip {
+    background:#fff; border-radius:12px; padding:10px 12px; margin-bottom:10px;
+    font-size:12px; line-height:1.6; color:#3d2b1f; flex:0 0 auto;
+  }
+  #print-img-overlay .pio-tip b { color:#6c5ce7; }
+  #print-img-overlay .pio-body {
+    flex:1 1 auto; overflow:auto; background:#fff; border-radius:12px; padding:10px;
+    -webkit-overflow-scrolling:touch;
+  }
+  #print-img-overlay .pio-img { width:100%; display:block; border-radius:6px; }
+  #print-img-overlay .pio-loading { text-align:center; color:#a08878; font-size:13px; padding:40px 0; }
+  @media print { body > #print-img-overlay { display:none !important; } }
 </style>
 </head>
 <body>
 <div id="app"></div>
 <div id="print-area"></div>
+<div id="print-img-overlay">
+  <div class="pio-head">
+    <span>🖨️ 印刷用の画像</span>
+    <button class="pio-close" onclick="closePrintImage()">✕</button>
+  </div>
+  <div class="pio-tip">
+    画像を<b>長押し</b>して「<b>“写真”に追加</b>」をタップ。<br>
+    そのあと<b>写真アプリ</b>を開いて、共有ボタン → <b>プリント</b>で印刷できるよ。
+  </div>
+  <div class="pio-body"></div>
+</div>
 <footer id="site-footer" style="max-width:520px; margin:20px auto 32px; padding:0 16px;">
   <div style="background:#fff; border:1.5px solid #eeddd0; border-radius:16px; padding:18px 16px; text-align:center;">
     <div style="font-size:14px; font-weight:700; color:#3d2b1f; margin-bottom:6px;">
@@ -1548,6 +1586,13 @@ function printReadyState() {
   return "none";
 }
 
+// ホーム画面に追加したアプリ（スタンドアロン）では iOS が印刷機能を使わせてくれない。
+// その場合は表を画像にして、写真アプリ経由で印刷してもらう。
+function isStandaloneApp() {
+  return window.navigator.standalone === true
+      || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+}
+
 // ここは同期で最後まで走り切ること（await も setTimeout も挟まない）
 function printMeals() {
   const from = S.printFrom, to = S.printTo;
@@ -1558,6 +1603,8 @@ function printMeals() {
     preloadPrintImages(from, to);
     return;
   }
+
+  if (isStandaloneApp()) { showPrintImage(from, to); return; }
 
   const dates = printRangeDates(from, to);
   const dayNames = ["日","月","火","水","木","金","土"];
@@ -1594,6 +1641,172 @@ window.addEventListener("afterprint", () => {
   const a = document.getElementById("print-area");
   if (a) a.innerHTML = "";
 });
+
+// ===== 印刷用の画像をつくる（ホーム画面アプリ用） =====
+const PIO_FONT = '-apple-system, "Hiragino Kaku Gothic ProN", "Noto Sans JP", sans-serif';
+
+function pioWrap(ctx, text, maxW) {
+  const out = [];
+  for (const para of String(text).split("\n")) {
+    if (!para) { out.push(""); continue; }
+    let line = "";
+    for (const ch of Array.from(para)) {
+      const t = line + ch;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = ch; }
+      else line = t;
+    }
+    if (line) out.push(line);
+  }
+  return out.length ? out : [""];
+}
+
+async function buildPrintImage(from, to) {
+  const dates = printRangeDates(from, to);
+  const dayNames = ["日","月","火","水","木","金","土"];
+
+  // 写真を先に読み込んでおく
+  const imgs = {};
+  await Promise.all([].concat(...dates.map(d => MEAL_SLOTS.map(slot => {
+    const key = `${d}_${slot.id}`;
+    const src = printImgCache[key];
+    if (!src) return Promise.resolve();
+    return new Promise(res => {
+      const im = new Image();
+      im.onload = () => { imgs[key] = im; res(); };
+      im.onerror = () => res();
+      im.src = src;
+    });
+  }))));
+
+  const W = 1240, pad = 10, labelW = 130;
+  const colW = Math.max(70, Math.floor((W - labelW) / dates.length));
+  const tableW = labelW + colW * dates.length;
+  const fs = 16, lh = 23, photoH = 90;
+
+  const meas = document.createElement("canvas").getContext("2d");
+  meas.font = fs + "px " + PIO_FONT;
+  const textW = colW - pad * 2;
+
+  // 各セルの中身と高さを先に測る
+  const rows = MEAL_SLOTS.map(slot => {
+    const cells = dates.map(d => {
+      const m = S.meals[d] || {};
+      const txt = (m[slot.id] || "").trim();
+      const im = imgs[`${d}_${slot.id}`];
+      const lines = txt ? pioWrap(meas, txt, textW) : [];
+      const h = pad * 2 + (im ? photoH + 8 : 0) + lines.length * lh;
+      return { lines, im, h };
+    });
+    let h = 62;
+    for (const c of cells) if (c.h > h) h = c.h;
+    return { slot, cells, h };
+  });
+
+  const titleH = 92, headH = 56;
+  let H = titleH + headH;
+  for (const r of rows) H += r.h;
+  H += 30;
+
+  const cv = document.createElement("canvas");
+  cv.width = tableW + 40;
+  cv.height = H;
+  const ctx = cv.getContext("2d");
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.textBaseline = "top";
+
+  const x0 = 20;
+
+  // タイトル
+  ctx.fillStyle = "#3d2b1f";
+  ctx.font = "bold 28px " + PIO_FONT;
+  ctx.fillText("🍙 " + getAppTitle() + " 食事記録", x0, 18);
+  ctx.fillStyle = "#a08878";
+  ctx.font = "17px " + PIO_FONT;
+  ctx.fillText(fmtDate(from) + " 〜 " + fmtDate(to), x0, 56);
+
+  // 見出し行
+  let y = titleH;
+  ctx.fillStyle = "#f3f0ff";
+  ctx.fillRect(x0, y, tableW, headH);
+  ctx.strokeStyle = "#ccc";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(x0 + 0.5, y + 0.5, tableW, headH);
+  ctx.textAlign = "center";
+  dates.forEach((d, i) => {
+    const cx = x0 + labelW + colW * i;
+    ctx.strokeRect(cx + 0.5, y + 0.5, colW, headH);
+    const dt = new Date(d + "T00:00:00+09:00");
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "bold 17px " + PIO_FONT;
+    ctx.fillText((dt.getMonth() + 1) + "/" + dt.getDate(), cx + colW / 2, y + 9);
+    ctx.fillStyle = "#a08878";
+    ctx.font = "14px " + PIO_FONT;
+    ctx.fillText("(" + dayNames[dt.getDay()] + ")", cx + colW / 2, y + 31);
+  });
+  y += headH;
+
+  // 本体
+  for (const r of rows) {
+    // 左の見出し
+    ctx.fillStyle = "#fdf6ee";
+    ctx.fillRect(x0, y, labelW, r.h);
+    ctx.strokeRect(x0 + 0.5, y + 0.5, labelW, r.h);
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#3d2b1f";
+    ctx.font = "20px " + PIO_FONT;
+    ctx.fillText(r.slot.emoji, x0 + labelW / 2, y + r.h / 2 - 24);
+    ctx.font = "bold 15px " + PIO_FONT;
+    ctx.fillText(r.slot.label, x0 + labelW / 2, y + r.h / 2 + 2);
+
+    r.cells.forEach((c, i) => {
+      const cx = x0 + labelW + colW * i;
+      ctx.strokeRect(cx + 0.5, y + 0.5, colW, r.h);
+      let ty = y + pad;
+      if (c.im) {
+        const iw = colW - pad * 2;
+        const ratio = Math.min(iw / c.im.width, photoH / c.im.height);
+        const dw = c.im.width * ratio, dh = c.im.height * ratio;
+        ctx.drawImage(c.im, cx + pad + (iw - dw) / 2, ty, dw, dh);
+        ty += photoH + 8;
+      }
+      ctx.textAlign = "left";
+      if (c.lines.length) {
+        ctx.fillStyle = "#3d2b1f";
+        ctx.font = fs + "px " + PIO_FONT;
+        for (const line of c.lines) { ctx.fillText(line, cx + pad, ty); ty += lh; }
+      } else if (!c.im) {
+        ctx.fillStyle = "#ccc";
+        ctx.font = fs + "px " + PIO_FONT;
+        ctx.textAlign = "center";
+        ctx.fillText("―", cx + colW / 2, y + r.h / 2 - 10);
+      }
+    });
+    y += r.h;
+  }
+
+  ctx.textAlign = "left";
+  return cv.toDataURL("image/png");
+}
+
+async function showPrintImage(from, to) {
+  const ov = document.getElementById("print-img-overlay");
+  const body = ov.querySelector(".pio-body");
+  ov.style.display = "flex";
+  body.innerHTML = '<div class="pio-loading">画像を作ってるよ…</div>';
+  try {
+    const url = await buildPrintImage(from, to);
+    body.innerHTML = '<img class="pio-img" src="' + url + '" alt="食事記録">';
+  } catch (e) {
+    body.innerHTML = '<div class="pio-loading">画像を作れへんかった…<br>期間を短くして、もう一度試してみてね</div>';
+  }
+}
+
+function closePrintImage() {
+  const ov = document.getElementById("print-img-overlay");
+  ov.style.display = "none";
+  ov.querySelector(".pio-body").innerHTML = "";
+}
 
 
 // ===== 余白スコア計算 =====
