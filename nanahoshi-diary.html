@@ -387,6 +387,11 @@
     -webkit-overflow-scrolling:touch;
   }
   #print-img-overlay .pio-img { width:100%; display:block; border-radius:6px; }
+  #print-img-overlay .pio-share {
+    display:block; width:100%; margin:0 0 12px; padding:14px;
+    background:linear-gradient(135deg,#8ab4f8,#a78bfa); color:#fff;
+    border:none; border-radius:12px; font-size:16px; font-weight:700; cursor:pointer;
+  }
   #print-img-overlay .pio-loading { text-align:center; color:#a08878; font-size:13px; padding:40px 0; }
   @media print { body > #print-img-overlay { display:none !important; } }
 </style>
@@ -399,10 +404,7 @@
     <span>🖨️ 印刷用の画像</span>
     <button class="pio-close" onclick="closePrintImage()">✕</button>
   </div>
-  <div class="pio-tip">
-    画像を<b>長押し</b>して「<b>“写真”に追加</b>」をタップ。<br>
-    そのあと<b>写真アプリ</b>を開いて、共有ボタン → <b>プリント</b>で印刷できるよ。
-  </div>
+  <div class="pio-tip" id="pio-tip">準備中…</div>
   <div class="pio-body"></div>
 </div>
 <footer id="site-footer" style="max-width:520px; margin:20px auto 32px; padding:0 16px;">
@@ -1786,18 +1788,61 @@ async function buildPrintImage(from, to) {
   }
 
   ctx.textAlign = "left";
-  return cv.toDataURL("image/png");
+  return cv;
+}
+
+let pioBlob = null;
+
+// 共有ボタン。await を挟むと iOS が「タップ直後」と認めてくれないので同期で呼ぶ
+function sharePrintImage() {
+  if (!pioBlob) return;
+  try {
+    const f = new File([pioBlob], "食事記録.png", { type: "image/png" });
+    navigator.share({ files: [f] }).catch(() => {});
+  } catch (e) {}
+}
+
+function downloadPrintImage() {
+  if (!pioBlob) return;
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(pioBlob);
+  a.download = "食事記録.png";
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
 }
 
 async function showPrintImage(from, to) {
   const ov = document.getElementById("print-img-overlay");
   const body = ov.querySelector(".pio-body");
+  const tip = document.getElementById("pio-tip");
   ov.style.display = "flex";
-  body.innerHTML = '<div class="pio-loading">画像を作ってるよ…</div>';
+  tip.innerHTML = "画像を作ってるよ…";
+  body.innerHTML = '<div class="pio-loading">少し待ってね</div>';
+  pioBlob = null;
   try {
-    const url = await buildPrintImage(from, to);
-    body.innerHTML = '<img class="pio-img" src="' + url + '" alt="食事記録">';
+    const cv = await buildPrintImage(from, to);
+    const url = cv.toDataURL("image/png");
+    pioBlob = await new Promise(res => cv.toBlob(res, "image/png"));
+
+    let canShare = false;
+    try {
+      canShare = !!(navigator.canShare && pioBlob &&
+        navigator.canShare({ files: [new File([pioBlob], "食事記録.png", { type: "image/png" })] }));
+    } catch (e) { canShare = false; }
+
+    if (canShare) {
+      tip.innerHTML = '下のボタン → <b>プリント</b>で、そのまま印刷できるよ。<br>' +
+                      '<b>"画像"を保存</b>を選べば、写真アプリに残しておくこともできる。';
+      body.innerHTML = '<button class="pio-share" onclick="sharePrintImage()">📤 共有してプリント</button>' +
+                       '<img class="pio-img" src="' + url + '" alt="食事記録">';
+    } else {
+      tip.innerHTML = '下のボタンで画像を保存して、<b>写真アプリ</b>から共有 → <b>プリント</b>してね。';
+      body.innerHTML = '<button class="pio-share" onclick="downloadPrintImage()">⬇️ 画像を保存する</button>' +
+                       '<img class="pio-img" src="' + url + '" alt="食事記録">';
+    }
   } catch (e) {
+    tip.innerHTML = "うまくいかへんかった…";
     body.innerHTML = '<div class="pio-loading">画像を作れへんかった…<br>期間を短くして、もう一度試してみてね</div>';
   }
 }
@@ -1806,6 +1851,7 @@ function closePrintImage() {
   const ov = document.getElementById("print-img-overlay");
   ov.style.display = "none";
   ov.querySelector(".pio-body").innerHTML = "";
+  pioBlob = null;
 }
 
 
